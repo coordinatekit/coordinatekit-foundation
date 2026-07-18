@@ -1,0 +1,66 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g., 0.2.0)"
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Bump version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          chmod +x scripts/bump-version.sh
+          scripts/bump-version.sh "$VERSION"
+
+      - name: Create temporary tag
+        env:
+          VERSION: ${{ inputs.version }}
+        run: git tag "v${VERSION}"
+
+      - name: Generate changelog
+        run: ./gradlew gitChangelog
+
+      - name: Delete temporary tag
+        env:
+          VERSION: ${{ inputs.version }}
+        run: git tag -d "v${VERSION}"
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          commit-message: "chore: prepare release ${{ inputs.version }}"
+          branch: "prepare-release/${{ inputs.version }}"
+          title: "chore: prepare release ${{ inputs.version }}"
+          body: |
+            Automated release preparation for version `${{ inputs.version }}`.
+
+            This PR includes:
+            - Version bump to `${{ inputs.version }}`
+            - Generated CHANGELOG.md
+
+            Triggered by @${{ github.actor }} via workflow dispatch.

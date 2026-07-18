@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a defect or unexpected behavior in this project.
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Report a bug. Include enough detail for a maintainer to reproduce the problem without guessing at missing context.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The version you depend on, or the commit SHA if you built from source.
+      placeholder: "e.g. 1.4.0, or commit a1b2c3d"
+    validations:
+      required: true
+
+  - type: input
+    id: java-version
+    attributes:
+      label: Java version
+      description: Output of `java -version`.
+      placeholder: "e.g. OpenJDK 21.0.3"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "e.g. macOS 14.5, Ubuntu 22.04, Windows 11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the exact steps that trigger the bug, in order.
+      placeholder: |
+        1. Build a `...` with ...
+        2. Call `...` on ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the full exception and stack trace if one was thrown.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro-code
+    attributes:
+      label: Minimal reproducing code example
+      description: A small, self-contained Java snippet that reproduces the problem. Remove anything not needed to trigger the bug.
+      render: java
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Paste any log output relevant to the bug. This renders as a code block automatically.
+      render: shell

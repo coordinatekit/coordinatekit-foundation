@@ -1,0 +1,45 @@
+name: Test
+
+on:
+  pull_request:
+    branches: ["*"]
+    paths:
+      - "**/src/**"
+      - "**/*.gradle"
+      - "gradle/**"
+      - "gradlew*"
+      - ".github/workflows/test.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Run tests
+        run: ./gradlew test aggregateJacocoReport
+
+      - name: Add coverage to PR
+        uses: madrapps/jacoco-report@v1.8.0
+        with:
+          paths: "build/reports/jacoco/aggregateJacocoReport/aggregateJacocoReport.xml"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          min-coverage-overall: 0
+          min-coverage-changed-files: 0
+          title: "Code Coverage"
+          update-comment: true

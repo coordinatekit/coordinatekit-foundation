@@ -1,0 +1,109 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+{{#tags}}
+{{#ifReleaseTag}}
+
+## [{{subString name 1}}] - {{tagTime}}
+{{#ifContainsBreaking commits}}
+
+### BREAKING CHANGES
+
+{{#commits}}
+{{#ifCommitBreaking .}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+{{#eachCommitFooter . tokenMatching="BREAKING[ -]CHANGE"}}
+{{#ifFooterHasValue .}}
+  {{{value}}}
+{{/ifFooterHasValue}}
+{{/eachCommitFooter}}
+{{/ifCommitBreaking}}
+{{/commits}}
+{{/ifContainsBreaking}}
+{{#ifContainsType commits type="feat"}}
+
+### Features
+
+{{#commits}}
+{{#ifCommitType . type="feat"}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+{{/ifCommitType}}
+{{/commits}}
+{{/ifContainsType}}
+{{#ifContainsType commits type="fix"}}
+
+### Bug Fixes
+
+{{#commits}}
+{{#ifCommitType . type="fix"}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+{{/ifCommitType}}
+{{/commits}}
+{{/ifContainsType}}
+{{#ifContainsType commits type="perf"}}
+
+### Performance
+
+{{#commits}}
+{{#ifCommitType . type="perf"}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+{{/ifCommitType}}
+{{/commits}}
+{{/ifContainsType}}
+{{#ifContainsType commits type="refactor"}}
+
+### Refactoring
+
+{{#commits}}
+{{#ifCommitType . type="refactor"}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+{{/ifCommitType}}
+{{/commits}}
+{{/ifContainsType}}
+{{#ifContainsType commits type="docs"}}
+
+### Documentation
+
+{{#commits}}
+{{#ifCommitType . type="docs"}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+{{/ifCommitType}}
+{{/commits}}
+{{/ifContainsType}}
+{{#ifContainsType commits type="build"}}
+
+### Build
+
+{{#commits}}
+{{#ifCommitType . type="build"}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+{{/ifCommitType}}
+{{/commits}}
+{{/ifContainsType}}
+{{#ifContainsType commits type="ci"}}
+
+### CI
+
+{{#commits}}
+{{#ifCommitType . type="ci"}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+{{/ifCommitType}}
+{{/commits}}
+{{/ifContainsType}}
+{{#ifContainsType commits type="test"}}
+
+### Tests
+
+{{#commits}}
+{{#ifCommitType . type="test"}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+{{/ifCommitType}}
+{{/commits}}
+{{/ifContainsType}}
+
+[{{subString name 1}}]: __REPO_URL__/releases/tag/{{name}}
+{{/ifReleaseTag}}
+{{/tags}}

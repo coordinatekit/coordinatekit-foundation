@@ -1,0 +1,148 @@
+import com.github.jknack.handlebars.Helper
+import se.bjurr.gitchangelog.internal.semantic.ConventionalCommitParser
+import se.bjurr.gitchangelog.plugin.gradle.HelperParam
+
+plugins {
+    id "com.diffplug.spotless" version "8.3.0"
+    id "jacoco"
+    id "java-library"
+    id "net.ltgt.errorprone" version "4.1.0"
+    id "se.bjurr.gitchangelog.git-changelog-gradle-plugin" version "3.1.2"
+}
+
+allprojects {
+    group = "org.coordinatekit.foundation"
+}
+
+gitChangelog {
+    templateContent.set(project.file(".infra/changelog.hbs").text)
+    dateFormat.set("yyyy-MM-dd")
+    file.set(project.file("CHANGELOG.md"))
+
+    // Squash-merged commits carry a trailing "(#NN)" pointing at their pull request. `description`
+    // renders the conventional-commit description with that reference removed, and `pullRequest`
+    // extracts the number so the template can link to the PR (falling back to the commit hash when
+    // a commit landed without one).
+    handlebarsHelpers.add(new HelperParam("description", { commit, options ->
+        ConventionalCommitParser.commitDescription(commit.message).replaceAll(/\s*\(#\d+\)$/, "").trim()
+    } as Helper))
+    handlebarsHelpers.add(new HelperParam("pullRequest", { commit, options ->
+        def matcher = commit.message =~ /\(#(\d+)\)/
+        matcher.find() ? matcher.group(1) : ""
+    } as Helper))
+}
+
+tasks.named('gitChangelog') {
+    doLast {
+        def changelog = file("CHANGELOG.md")
+        changelog.text = changelog.text.replace('__REPO_URL__', (findProperty('repoUrl') ?: '') as String)
+    }
+}
+
+subprojects {
+    apply plugin: "com.diffplug.spotless"
+    apply plugin: "jacoco"
+    apply plugin: "java-library"
+    apply plugin: "net.ltgt.errorprone"
+
+    dependencies {
+        errorprone "com.google.errorprone:error_prone_core:2.48.0"
+
+        api "org.jspecify:jspecify:1.0.0"
+        implementation "org.slf4j:slf4j-api:2.0.17"
+
+        testImplementation(platform("org.junit:junit-bom:6.0.3"))
+        testImplementation("org.junit.jupiter:junit-jupiter")
+        testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    spotless {
+        java {
+            eclipse("4.21").configFile(rootProject.file(".infra/eclipse_java_coordinatekit.xml"))
+            licenseHeaderFile rootProject.file(".infra/license_header.txt")
+            target "src/**/*.java"
+            trimTrailingWhitespace()
+            toggleOffOn()
+        }
+    }
+
+    test {
+        useJUnitPlatform()
+        finalizedBy jacocoTestReport
+    }
+
+    jacocoTestReport {
+        dependsOn test
+        reports {
+            xml.required = true
+            html.required = true
+        }
+        doLast {
+            def customCss = rootProject.file('.infra/jacoco-report.css')
+            if (customCss.exists()) {
+                copy {
+                    from customCss
+                    into reports.html.outputLocation.dir('jacoco-resources')
+                    rename { 'report.css' }
+                }
+            }
+        }
+    }
+}
+
+tasks.register('aggregateJacocoReport', JacocoReport) {
+    description = "Generate aggregated JaCoCo coverage report for all modules"
+    group = "verification"
+
+    dependsOn subprojects*.test
+
+    executionData.from(subprojects.collect {
+        it.tasks.jacocoTestReport.executionData
+    })
+
+    sourceDirectories.from(subprojects.collect {
+        it.sourceSets.main.allSource.srcDirs
+    })
+
+    classDirectories.from(subprojects.collect {
+        it.sourceSets.main.output
+    })
+
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+tasks.register('aggregateJavadoc', Javadoc) {
+    description = "Generate aggregated Javadoc for all modules"
+    group = "documentation"
+
+    source subprojects.collect { it.sourceSets.main.allJava }
+    classpath = files(subprojects.collect { it.sourceSets.main.compileClasspath })
+
+    options {
+        title = "CoordinateKit Foundation ${project.version} API"
+        windowTitle = "CoordinateKit Foundation API"
+        links = [
+                "https://docs.oracle.com/en/java/javase/21/docs/api/",
+                "https://jspecify.dev/docs/api/"
+        ]
+        encoding = "UTF-8"
+        docEncoding = "UTF-8"
+        charSet = "UTF-8"
+
+        subprojects.each { subproject ->
+            def pkgPattern = "${project.group}.${subproject.name.replace('-', '.')}*"
+            def groupName = subproject.name.split('-').collect { it.capitalize() }.join(' ')
+            //noinspection GroovyAssignabilityCheck, ForeignDelegate
+            group("${groupName} Module", [pkgPattern])
+        }
+
+        addBooleanOption('Werror', true)
+    }
+}
