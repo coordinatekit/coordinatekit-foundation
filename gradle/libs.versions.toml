@@ -1,0 +1,30 @@
+[versions]
+# api — update conservatively (security/bugs only)
+jspecify = "1.0.0"
+
+# implementation — keep current
+jline = "4.3.1"
+slf4j = "2.0.17"
+
+# test — always latest
+junit = "6.0.3"
+
+# build — keep current
+errorprone = "2.48.0"
+errorprone-plugin = "4.1.0"
+gitchangelog-plugin = "3.1.2"
+spotless = "8.3.0"
+
+[libraries]
+errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
+jline = { module = "org.jline:jline", version.ref = "jline" }
+jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+
+[plugins]
+errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
+gitchangelog = { id = "se.bjurr.gitchangelog.git-changelog-gradle-plugin", version.ref = "gitchangelog-plugin" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

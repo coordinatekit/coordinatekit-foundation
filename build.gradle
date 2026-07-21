@@ -3,15 +3,21 @@ import se.bjurr.gitchangelog.internal.semantic.ConventionalCommitParser
 import se.bjurr.gitchangelog.plugin.gradle.HelperParam
 
 plugins {
-    id "com.diffplug.spotless" version "8.3.0"
+    alias(libs.plugins.spotless)
+    alias(libs.plugins.errorprone)
     id "jacoco"
     id "java-library"
-    id "net.ltgt.errorprone" version "4.1.0"
-    id "se.bjurr.gitchangelog.git-changelog-gradle-plugin" version "3.1.2"
+    alias(libs.plugins.gitchangelog)
 }
 
 allprojects {
     group = "org.coordinatekit.foundation"
+
+    // The root project needs these too: `aggregateJacocoReport` resolves JaCoCo's Ant tasks against
+    // them.
+    repositories {
+        mavenCentral()
+    }
 }
 
 gitChangelog {
@@ -39,35 +45,45 @@ tasks.named('gitChangelog') {
     }
 }
 
+// `conventions` publishes two Spotless configuration files rather than code. It takes the jar and
+// formatting wiring every subproject shares, and none of the compile, test, or coverage setup that
+// only makes sense for a module with sources.
+def codeProjects = subprojects.findAll { it.name != "conventions" }
+
 subprojects {
     apply plugin: "com.diffplug.spotless"
-    apply plugin: "jacoco"
     apply plugin: "java-library"
-    apply plugin: "net.ltgt.errorprone"
-
-    dependencies {
-        errorprone "com.google.errorprone:error_prone_core:2.48.0"
-
-        api "org.jspecify:jspecify:1.0.0"
-        implementation "org.slf4j:slf4j-api:2.0.17"
-
-        testImplementation(platform("org.junit:junit-bom:6.0.3"))
-        testImplementation("org.junit.jupiter:junit-jupiter")
-        testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-    }
-
-    repositories {
-        mavenCentral()
-    }
 
     spotless {
         java {
-            eclipse("4.21").configFile(rootProject.file(".infra/eclipse_java_coordinatekit.xml"))
-            licenseHeaderFile rootProject.file(".infra/license_header.txt")
+            eclipse("4.21").configFile(rootProject.file("conventions/src/main/resources/org/coordinatekit/foundation/conventions/eclipse_java_coordinatekit.xml"))
+            licenseHeaderFile rootProject.file("conventions/src/main/resources/org/coordinatekit/foundation/conventions/license_header.txt")
             target "src/**/*.java"
             trimTrailingWhitespace()
             toggleOffOn()
         }
+    }
+}
+
+configure(codeProjects) {
+    apply plugin: "jacoco"
+    apply plugin: "net.ltgt.errorprone"
+
+    dependencies {
+        errorprone libs.errorprone.core
+
+        api libs.jspecify
+        implementation libs.slf4j.api
+
+        testImplementation(platform(libs.junit.bom))
+        testImplementation(libs.junit.jupiter)
+        testRuntimeOnly(libs.junit.platform.launcher)
+    }
+
+    // Error Prone 2.48 refuses to run on JDK 21 without this javac option, and net.ltgt.errorprone
+    // 4.1.0 does not pass it automatically.
+    tasks.withType(JavaCompile).configureEach {
+        options.compilerArgs += "-XDaddTypeAnnotationsToSymbol=true"
     }
 
     test {
@@ -98,17 +114,17 @@ tasks.register('aggregateJacocoReport', JacocoReport) {
     description = "Generate aggregated JaCoCo coverage report for all modules"
     group = "verification"
 
-    dependsOn subprojects*.test
+    dependsOn codeProjects*.test
 
-    executionData.from(subprojects.collect {
+    executionData.from(codeProjects.collect {
         it.tasks.jacocoTestReport.executionData
     })
 
-    sourceDirectories.from(subprojects.collect {
+    sourceDirectories.from(codeProjects.collect {
         it.sourceSets.main.allSource.srcDirs
     })
 
-    classDirectories.from(subprojects.collect {
+    classDirectories.from(codeProjects.collect {
         it.sourceSets.main.output
     })
 
@@ -122,8 +138,8 @@ tasks.register('aggregateJavadoc', Javadoc) {
     description = "Generate aggregated Javadoc for all modules"
     group = "documentation"
 
-    source subprojects.collect { it.sourceSets.main.allJava }
-    classpath = files(subprojects.collect { it.sourceSets.main.compileClasspath })
+    source codeProjects.collect { it.sourceSets.main.allJava }
+    classpath = files(codeProjects.collect { it.sourceSets.main.compileClasspath })
 
     options {
         title = "CoordinateKit Foundation ${project.version} API"
@@ -136,9 +152,13 @@ tasks.register('aggregateJavadoc', Javadoc) {
         docEncoding = "UTF-8"
         charSet = "UTF-8"
 
-        subprojects.each { subproject ->
+        def acronyms = ["cli", "api"] as Set
+
+        codeProjects.each { subproject ->
             def pkgPattern = "${project.group}.${subproject.name.replace('-', '.')}*"
-            def groupName = subproject.name.split('-').collect { it.capitalize() }.join(' ')
+            def groupName = subproject.name.split('-')
+                    .collect { acronyms.contains(it) ? it.toUpperCase() : it.capitalize() }
+                    .join(' ')
             //noinspection GroovyAssignabilityCheck, ForeignDelegate
             group("${groupName} Module", [pkgPattern])
         }
