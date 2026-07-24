@@ -1,0 +1,4 @@
+// This module publishes `src/main/resources` and nothing else: the Eclipse formatter profile and
+// the license header that CoordinateKit's Java projects format against. There is no code here and
+// no Gradle plugin. A consumer pulls the jar down as an ordinary dependency and wires the two files
+// into its own Spotless configuration however it likes. See README.md.
