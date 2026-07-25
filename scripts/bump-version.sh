@@ -15,13 +15,31 @@ export LC_ALL=C
 NEW_VERSION="${1:?Usage: bump-version.sh <new-version> [<current-version>]}"
 CURRENT_VERSION="${2:-}"
 
-# Read project name from settings.gradle
-PROJECT_NAME=$(sed -n 's/^rootProject\.name *= *"\(.*\)"/\1/p' settings.gradle)
-if [ -z "$PROJECT_NAME" ]; then
-  echo "Error: could not read project name from settings.gradle" >&2
+# Read the published group from build.gradle. Task definitions also assign `group` ("verification",
+# "documentation"), so the pattern accepts only a dotted group id, and a conflict is an error rather
+# than a silent pick of whichever came first.
+GROUP=$(sed -nE 's/^[[:space:]]*group[[:space:]]*=[[:space:]]*"([A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+)"[[:space:]]*$/\1/p' build.gradle | sort -u)
+case "$GROUP" in
+  "")
+    echo "Error: could not read a group id (e.g. org.example.foo) from build.gradle" >&2
+    exit 1
+    ;;
+  *$'\n'*)
+    echo "Error: build.gradle declares more than one group id:" >&2
+    echo "$GROUP" | sed 's/^/  /' >&2
+    exit 1
+    ;;
+esac
+echo "Detected group: $GROUP"
+
+# Read the module names from settings.gradle. The jar-filename rewrite below is anchored to them so
+# it never touches a dependency jar that a doc happens to name.
+MODULES=$(sed -nE "s/^[[:space:]]*include[[:space:]]*\(?[[:space:]]*['\"]:?([A-Za-z0-9._:-]+)['\"].*/\1/p" settings.gradle |
+  sed -E 's/.*://' | sort -u)
+if [ -z "$MODULES" ]; then
+  echo "Error: could not read any module names from settings.gradle" >&2
   exit 1
 fi
-echo "Detected project name: $PROJECT_NAME"
 
 if [ -z "$CURRENT_VERSION" ]; then
   CURRENT_VERSION=$(grep '^version=' gradle.properties | cut -d= -f2)
@@ -39,15 +57,26 @@ fi
 
 # Escape dots for use in regex
 ESCAPED_CURRENT=$(printf '%s' "$CURRENT_VERSION" | sed 's/\./\\./g')
+ESCAPED_GROUP=$(printf '%s' "$GROUP" | sed 's/\./\\./g')
+ESCAPED_MODULES=$(printf '%s' "$MODULES" | sed 's/\./\\./g' | paste -sd'|' -)
 
-# Verify the current version exists in at least one tracked file
-if ! git ls-files -z | xargs -0 grep -l "$CURRENT_VERSION" > /dev/null 2>&1; then
+# Restrict every rewrite step to tracked text files. Binary files (e.g. the tracked
+# gradle-wrapper.jar) can byte-match these patterns by coincidence, and sed -i risks
+# corrupting them; `grep -I` skips anything it detects as binary.
+tracked_text_files() {
+  # `--null` rather than `-Z`: BSD grep (macOS) accepts -Z but silently ignores it, so
+  # -Z leaves entries newline-separated and xargs -0 reads them as one giant filename.
+  git ls-files -z | xargs -0 grep -Il --null '' 2>/dev/null || true
+}
+
+# Verify the current version exists in at least one tracked text file
+if ! tracked_text_files | xargs -0 grep -l "$CURRENT_VERSION" > /dev/null 2>&1; then
   echo "Error: current version '$CURRENT_VERSION' not found in any tracked file" >&2
   exit 1
 fi
 
 # Count matches before replacing
-MATCH_COUNT=$(git ls-files -z | xargs -0 grep -c "$CURRENT_VERSION" 2>/dev/null | awk -F: '{s+=$NF} END {print s}')
+MATCH_COUNT=$(tracked_text_files | xargs -0 grep -c "$CURRENT_VERSION" 2>/dev/null | awk -F: '{s+=$NF} END {print s}')
 echo "Found $MATCH_COUNT occurrence(s) of '$CURRENT_VERSION' to evaluate"
 
 # Detect sed in-place flag (macOS requires '' argument, Linux does not)
@@ -57,12 +86,35 @@ else
   SED_INPLACE=(sed -i '' -E)
 fi
 
-# Perform targeted replacements across all tracked files
-git ls-files -z | xargs -0 "${SED_INPLACE[@]}" \
-  -e "s/version = \"$ESCAPED_CURRENT\"/version = \"$NEW_VERSION\"/g" \
-  -e "s/version=$ESCAPED_CURRENT/version=$NEW_VERSION/g" \
-  -e "s/($PROJECT_NAME:[A-Za-z0-9._-]+:)$ESCAPED_CURRENT/\1$NEW_VERSION/g" \
+# `version=`, `version = "…"`, and `<version>…</version>` always track the exact current version,
+# whether that is a release or a `-SNAPSHOT`, so these patterns stay anchored to CURRENT_VERSION.
+SED_ARGS=(
+  -e "s/version = \"$ESCAPED_CURRENT\"/version = \"$NEW_VERSION\"/g"
+  -e "s/version=$ESCAPED_CURRENT/version=$NEW_VERSION/g"
   -e "s|<version>$ESCAPED_CURRENT</version>|<version>$NEW_VERSION</version>|g"
+)
+
+# Published coordinates and jar filenames (README) name the last release, so they are matched by
+# "any version" rather than CURRENT_VERSION and are only rewritten when bumping to a release. The
+# `/-SNAPSHOT/!` address keeps them off lines that document a snapshot coordinate, which would
+# otherwise be swallowed by the version pattern and turned into a release coordinate. The jar rule
+# is anchored to this project's own module names so it never touches a dependency jar that a doc
+# happens to name.
+if [[ "$NEW_VERSION" != *-SNAPSHOT ]]; then
+  SED_ARGS+=(
+    -e "/-SNAPSHOT/!s/($ESCAPED_GROUP:[A-Za-z0-9._-]+:)[0-9][A-Za-z0-9.+-]*/\1$NEW_VERSION/g"
+    -e "/-SNAPSHOT/!s/($ESCAPED_MODULES)-[0-9][A-Za-z0-9.+-]*\.jar/\1-$NEW_VERSION.jar/g"
+  )
+else
+  # Snapshot coordinates (RELEASE.md) name the in-development version, so they are rewritten on the
+  # bump back to the next `-SNAPSHOT` and left alone by a release bump.
+  SED_ARGS+=(
+    -e "s/($ESCAPED_GROUP:[A-Za-z0-9._-]+:)[0-9][A-Za-z0-9.+-]*-SNAPSHOT/\1$NEW_VERSION/g"
+  )
+fi
+
+# Perform targeted replacements across all tracked text files
+tracked_text_files | xargs -0 "${SED_INPLACE[@]}" "${SED_ARGS[@]}"
 
 # Report what changed
 CHANGED_FILES=$(git diff --name-only)

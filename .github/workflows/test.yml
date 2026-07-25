@@ -34,6 +34,9 @@ jobs:
       - name: Run tests
         run: ./gradlew test aggregateJacocoReport
 
+      - name: Validate POM
+        run: ./gradlew validatePom
+
       - name: Add coverage to PR
         uses: madrapps/jacoco-report@v1.8.0
         with:

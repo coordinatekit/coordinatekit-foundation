@@ -1,4 +1,5 @@
 import com.github.jknack.handlebars.Helper
+import groovy.xml.XmlSlurper
 import se.bjurr.gitchangelog.internal.semantic.ConventionalCommitParser
 import se.bjurr.gitchangelog.plugin.gradle.HelperParam
 
@@ -8,6 +9,7 @@ plugins {
     id "jacoco"
     id "java-library"
     alias(libs.plugins.gitchangelog)
+    alias(libs.plugins.nmcp.aggregation)
 }
 
 allprojects {
@@ -50,9 +52,137 @@ tasks.named('gitChangelog') {
 // only makes sense for a module with sources.
 def codeProjects = subprojects.findAll { it.name != "conventions" }
 
+// Signing is required only when a deployment is actually going to Central. `./gradlew build`,
+// `publishToMavenLocal`, and snapshot uploads all run without a key.
+def isPublishingToCentral = { gradle.taskGraph.allTasks.any { it.name == "nmcpPublishAggregationToCentralPortal" } }
+
+// One deployment, not one per module: nmcp collects every module's publication into a single
+// bundle and uploads it once, so Central validates and publishes both modules as a unit. A module
+// added to settings.gradle has to be listed here too or it silently ships nothing.
+nmcpAggregation {
+    centralPortal {
+        username = findProperty("centralPortalUsername")
+        password = findProperty("centralPortalPassword")
+        publishingType = "AUTOMATIC"
+    }
+}
+
+dependencies {
+    nmcpAggregation project(":cli-brand")
+    nmcpAggregation project(":conventions")
+}
+
 subprojects {
     apply plugin: "com.diffplug.spotless"
     apply plugin: "java-library"
+    apply plugin: "maven-publish"
+    apply plugin: "signing"
+    apply plugin: "com.gradleup.nmcp"
+
+    java {
+        withJavadocJar()
+        withSourcesJar()
+    }
+
+    // The subproject's own build.gradle has not been evaluated yet when this block runs, so the
+    // description has to be read through a provider that resolves at POM-generation time.
+    def moduleDescription = provider { project.description }
+
+    publishing {
+        publications {
+            centralPortal(MavenPublication) {
+                from components.java
+
+                pom {
+                    name = "CoordinateKit Foundation ${project.name}"
+                    description = moduleDescription
+                    url = findProperty("repoUrl")
+
+                    licenses {
+                        license {
+                            name = "The Apache License, Version 2.0"
+                            url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+                        }
+                    }
+
+                    developers {
+                        developer {
+                            id = "andymarek"
+                            name = "Andy Marek"
+                            email = "andy@andymarek.com"
+                        }
+                    }
+
+                    scm {
+                        connection = "scm:git:git://github.com/coordinatekit/coordinatekit-foundation.git"
+                        developerConnection = "scm:git:ssh://github.com/coordinatekit/coordinatekit-foundation.git"
+                        url = findProperty("repoUrl")
+                    }
+                }
+            }
+        }
+    }
+
+    // Central rejects a deployment whose POM is missing name, description, url, a license, a
+    // developer, or scm. The description in particular reaches the POM through a provider that
+    // resolves late, so a wiring mistake surfaces as an empty element rather than a build failure.
+    // `check` fails here instead, naming the element, long before the Portal sees it.
+    def modulePath = project.path
+    def pomFile = tasks.named("generatePomFileForCentralPortalPublication", GenerateMavenPom)
+            .map { it.destination }
+
+    tasks.register("validatePom") {
+        description = "Verify the generated POM carries the metadata Maven Central requires"
+        group = "verification"
+
+        dependsOn tasks.named("generatePomFileForCentralPortalPublication")
+
+        doLast {
+            // Not namespace-aware: the POM declares a default xmlns, and matching bare local names
+            // keeps the lookups readable.
+            def pom = new XmlSlurper(false, false).parse(pomFile.get())
+            def missing = []
+            def require = { String element, String value -> if (!value?.trim()) missing << element }
+
+            require("groupId", pom.groupId.text())
+            require("artifactId", pom.artifactId.text())
+            require("version", pom.version.text())
+            require("name", pom.name.text())
+            require("description", pom.description.text())
+            require("url", pom.url.text())
+            require("licenses/license/name", pom.licenses.license.name.text())
+            require("licenses/license/url", pom.licenses.license.url.text())
+            require("developers/developer/name", pom.developers.developer.name.text())
+            require("scm/url", pom.scm.url.text())
+            require("scm/connection", pom.scm.connection.text())
+
+            if (missing) {
+                throw new GradleException(
+                        "${modulePath} POM is missing metadata Maven Central requires: ${missing.join(', ')} " +
+                        "(see ${pomFile.get()})")
+            }
+        }
+    }
+
+    tasks.named("check") {
+        dependsOn tasks.named("validatePom")
+    }
+
+    signing {
+        String signingKey = findProperty("signingKey")
+        String signingPassword = findProperty("signingPassword")
+        if (signingKey) {
+            useInMemoryPgpKeys(signingKey, signingPassword)
+        } else {
+            useGpgCmd()
+        }
+        sign publishing.publications.centralPortal
+        required = isPublishingToCentral
+    }
+
+    tasks.withType(Sign).configureEach {
+        onlyIf isPublishingToCentral
+    }
 
     spotless {
         java {
@@ -107,6 +237,17 @@ configure(codeProjects) {
                 }
             }
         }
+    }
+}
+
+// `conventions` publishes two resources and no classes, so javadoc exits with "No public or
+// protected classes found to document" and would fail `build`. Its javadoc jar is empty by
+// necessity; Central only requires that one exist. Every other module keeps javadoc's error
+// reporting, and aggregateJavadoc layers -Werror on top — though it draws from codeProjects, so
+// it never sees this module.
+project(":conventions") {
+    javadoc {
+        failOnError = false
     }
 }
 
