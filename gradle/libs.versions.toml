@@ -4,7 +4,7 @@ jspecify = "1.0.0"
 
 # implementation — keep current
 jline = "4.3.1"
-slf4j = "2.0.17"
+slf4j = "2.0.18"
 
 # test — always latest
 junit = "6.0.3"
