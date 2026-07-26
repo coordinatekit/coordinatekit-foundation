@@ -7,9 +7,15 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-publish
+  cancel-in-progress: false
+
 jobs:
-  build:
+  build-and-publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
@@ -27,8 +33,19 @@ jobs:
       - name: Build
         run: ./gradlew build
 
+      - name: Javadoc
+        run: ./gradlew aggregateJavadoc
+
+      - name: Publish to Maven Central
+        run: ./gradlew publishAggregationToCentralPortal
+        env:
+          ORG_GRADLE_PROJECT_centralPortalUsername: ${{ secrets.SONATYPE_USERNAME }}
+          ORG_GRADLE_PROJECT_centralPortalPassword: ${{ secrets.SONATYPE_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.GPG_PRIVATE_KEY }}
+          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.GPG_PASSPHRASE }}
+
   github-release:
-    needs: build
+    needs: build-and-publish
     runs-on: ubuntu-latest
 
     steps:

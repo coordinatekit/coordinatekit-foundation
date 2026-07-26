@@ -2,7 +2,7 @@
 
 The base layer CoordinateKit's projects build on. Functionality more than one repository needs is implemented here once and consumed as a published library.
 
-It includes two modules: `cli-brand`, the brand banner CoordinateKit's command-line tools print, and `conventions`, the Eclipse formatter profile and license header CoordinateKit's Java sources are formatted against.
+It includes two modules: `cli-brand`, the brand banner CoordinateKit's command-line tools print, and `conventions`, the Eclipse formatter profile and license header CoordinateKit's Java sources are formatted against. Both jars come straight from Maven Central; see [RELEASE.md](RELEASE.md) for how a release ships and how to depend on a `-SNAPSHOT` build instead.
 
 ## CLI brand
 

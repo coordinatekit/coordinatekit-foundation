@@ -1,3 +1,5 @@
+description = "Brand banner rendering for CoordinateKit's command-line tools."
+
 dependencies {
     implementation libs.jline
 }

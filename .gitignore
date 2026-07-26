@@ -5,6 +5,7 @@
 !/CONTRIBUTING.md
 !/CHANGELOG.md
 !/README.md
+!/RELEASE.md
 .*
 !/.gitattributes
 !/.github
