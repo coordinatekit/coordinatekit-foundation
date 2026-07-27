@@ -20,9 +20,10 @@ JDK 21, Gradle 9.4 through the wrapper.
 ./gradlew spotlessApply
 ./gradlew aggregateJacocoReport # build/reports/jacoco/aggregateJacocoReport/html/index.html
 ./gradlew aggregateJavadoc      # runs with -Werror; any Javadoc warning is a failure
+scripts/bump-version.test.sh    # pure bash, no JDK or Gradle
 ```
 
-Run `pre-commit install` once per clone. The hooks run prettier, `./gradlew spotlessApply`, and `./gradlew check` before every commit, and enforce Conventional Commits on the message. A commit is slow and arrives pre-verified.
+Run `pre-commit install` once per clone. The hooks run prettier, `./gradlew spotlessApply`, `scripts/bump-version.test.sh`, and `./gradlew check` before every commit, and enforce Conventional Commits on the message. The `bump-version.test.sh` hook runs only when a staged change touches something under `scripts/`. A commit is slow and arrives pre-verified.
 
 ## Build layout
 
@@ -32,7 +33,7 @@ A new module needs an `include` in `settings.gradle` (which `scripts/bump-versio
 
 The repository formats itself against `conventions`' files by path rather than by resolving the published jar, so the build never depends on its own artifact. Consumers use the jar.
 
-Dependency versions live in `gradle/libs.versions.toml`, grouped under comments that state an update policy for each group. The `api` coordinates move conservatively because they are on the published surface, and test dependencies track latest. The project version lives in `gradle.properties`, and `scripts/bump-version.sh` rewrites it across every tracked file, matching `version=`, `version = "…"`, `<version>…</version>`, and `<project>:<module>:<version>` coordinates. Two invariants keep the published examples self-maintaining as long as they keep that coordinate form: release coordinates and this project's own module jar filenames (README) track the last release, so a bump to a release version rewrites them and a bump to a `-SNAPSHOT` leaves them alone; snapshot coordinates (RELEASE.md's "Consuming snapshots" section) track the in-development version, so a bump to a `-SNAPSHOT` rewrites that one and a bump to a release leaves it alone.
+Dependency versions live in `gradle/libs.versions.toml`, grouped under comments that state an update policy for each group. The `api` coordinates move conservatively because they are on the published surface, and test dependencies track latest. The project version lives in `gradle.properties`, and `scripts/bump-version.sh` rewrites it across every tracked file, matching `version=`, `version = "…"`, `<version>…</version>`, and `<project>:<module>:<version>` coordinates. Two invariants keep the published examples self-maintaining as long as they keep that coordinate form: release coordinates and this project's own module jar filenames (README) track the last release, so a bump to a release version rewrites them and a bump to a `-SNAPSHOT` leaves them alone; snapshot coordinates (RELEASE.md's "Consuming snapshots" section) track the in-development version, so a bump to a `-SNAPSHOT` rewrites that one and a bump to a release leaves it alone. `scripts/bump-version.test.sh` pins both invariants and every error path against throwaway git repositories built with a synthetic group and synthetic module names, so it fails if the script ever stops deriving them from `build.gradle` and `settings.gradle`.
 
 Error Prone 2.48 needs `-XDaddTypeAnnotationsToSymbol=true` on JDK 21 and `net.ltgt.errorprone` 4.1.0 does not pass it, which is what the `JavaCompile` block in `build.gradle` is for. Removing it breaks compilation.
 
@@ -54,11 +55,11 @@ Code that touches a terminal or the environment splits into a thin private gathe
 
 ## Tests
 
-JUnit Jupiter. A parameterized case is a record named `<Something>Parameters` carrying a `name` field, with a `static Stream<…> methodName()` provider directly above the `@MethodSource @ParameterizedTest` of the same name. Test methods are named `member__scenario`, as in `colorMode__ladder`. Bodies are segmented with `// ARRANGE //`, `// ACT //`, and `// ASSERT //`. Assertions describe structure, such as whether the mark is present or which SGR form was emitted, rather than pinning exact art, so the art can be redrawn without rewriting the tests. One exception is deliberate: `BannerTest.mark__widthPinned` pins the mark's width to catch an accidental change to `mark.txt`.
+JUnit Jupiter. A parameterized case is a record named `<Something>Parameters` carrying a `name` field, with a `static Stream<…> methodName()` provider directly above the `@MethodSource @ParameterizedTest` of the same name. Test methods are named `member__scenario`, as in `colorMode__ladder`. Bodies are segmented with `// ARRANGE //`, `// ACT //`, and `// ASSERT //`. Assertions describe structure, such as whether the mark is present or which SGR form was emitted, rather than pinning exact art, so the art can be redrawn without rewriting the tests. One exception is deliberate: `BannerTest.mark__widthPinned` pins the mark's width to catch an accidental change to `mark.txt`. The only non-JUnit test is `scripts/bump-version.test.sh`, whose cases are `case_<name>` functions driven by a list at the bottom of the file.
 
 ## CI and releases
 
-Pull requests run tests with a JaCoCo coverage comment, Javadoc, and Spotless. The Spotless job applies formatting and pushes a `style:` commit on same-repo pull requests, and only checks on forks. Pull request titles are linted as Conventional Commits with a lowercase subject.
+Pull requests run tests with a JaCoCo coverage comment, Javadoc, and Spotless. Every workflow is filtered by path to the concern it covers, so `scripts/bump-version.test.sh` runs from its own `scripts.yml` rather than from `test.yml`: it needs neither a JDK nor Gradle, and folding it into the Java job would make a scripts-only pull request pay for a full Gradle run it cannot affect. The Spotless job applies formatting and pushes a `style:` commit on same-repo pull requests, and only checks on forks. Pull request titles are linted as Conventional Commits with a lowercase subject.
 
 Releasing takes two steps. The Prepare Release workflow, dispatched manually with a version, opens a `chore: prepare release <version>` pull request; pushing the `v<version>` tag afterwards publishes both modules to Maven Central and only then cuts the GitHub release from the matching `CHANGELOG.md` section. `RELEASE.md` has the full flow, the credentials, the snapshot path, and the bump back to the next `-SNAPSHOT`.
 

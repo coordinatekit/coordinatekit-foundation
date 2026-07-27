@@ -1,0 +1,22 @@
+name: Scripts
+
+on:
+  pull_request:
+    branches: ["*"]
+    paths:
+      - "scripts/**"
+      - ".github/workflows/scripts.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Test bump-version script
+        run: ./scripts/bump-version.test.sh

@@ -42,11 +42,18 @@ if [ -z "$MODULES" ]; then
 fi
 
 if [ -z "$CURRENT_VERSION" ]; then
-  CURRENT_VERSION=$(grep '^version=' gradle.properties | cut -d= -f2)
-  if [ -z "$CURRENT_VERSION" ]; then
-    echo "Error: could not read current version from gradle.properties" >&2
-    exit 1
-  fi
+  CURRENT_VERSION=$(grep '^version=' gradle.properties | cut -d= -f2 || true)
+  case "$CURRENT_VERSION" in
+    "")
+      echo "Error: could not read current version from gradle.properties" >&2
+      exit 1
+      ;;
+    *$'\n'*)
+      echo "Error: gradle.properties declares more than one version key:" >&2
+      echo "$CURRENT_VERSION" | sed 's/^/  /' >&2
+      exit 1
+      ;;
+  esac
   echo "Detected current version: $CURRENT_VERSION"
 fi
 
@@ -99,17 +106,19 @@ SED_ARGS=(
 # `/-SNAPSHOT/!` address keeps them off lines that document a snapshot coordinate, which would
 # otherwise be swallowed by the version pattern and turned into a release coordinate. The jar rule
 # is anchored to this project's own module names so it never touches a dependency jar that a doc
-# happens to name.
+# happens to name. The `(^|[^A-Za-z0-9._-])` left-hand guard keeps a forked or foreign name (e.g.
+# `my-conventions-1.2.3.jar`, `notmy.org.coordinatekit.foundation:x:1.0`) from being caught by the
+# alternation matching only a suffix of it.
 if [[ "$NEW_VERSION" != *-SNAPSHOT ]]; then
   SED_ARGS+=(
-    -e "/-SNAPSHOT/!s/($ESCAPED_GROUP:[A-Za-z0-9._-]+:)[0-9][A-Za-z0-9.+-]*/\1$NEW_VERSION/g"
-    -e "/-SNAPSHOT/!s/($ESCAPED_MODULES)-[0-9][A-Za-z0-9.+-]*\.jar/\1-$NEW_VERSION.jar/g"
+    -e "/-SNAPSHOT/!s/(^|[^A-Za-z0-9._-])($ESCAPED_GROUP:[A-Za-z0-9._-]+:)[0-9][A-Za-z0-9.+-]*/\1\2$NEW_VERSION/g"
+    -e "/-SNAPSHOT/!s/(^|[^A-Za-z0-9._-])($ESCAPED_MODULES)-[0-9][A-Za-z0-9.+-]*\.jar/\1\2-$NEW_VERSION.jar/g"
   )
 else
   # Snapshot coordinates (RELEASE.md) name the in-development version, so they are rewritten on the
   # bump back to the next `-SNAPSHOT` and left alone by a release bump.
   SED_ARGS+=(
-    -e "s/($ESCAPED_GROUP:[A-Za-z0-9._-]+:)[0-9][A-Za-z0-9.+-]*-SNAPSHOT/\1$NEW_VERSION/g"
+    -e "s/(^|[^A-Za-z0-9._-])($ESCAPED_GROUP:[A-Za-z0-9._-]+:)[0-9][A-Za-z0-9.+-]*-SNAPSHOT/\1\2$NEW_VERSION/g"
   )
 fi
 
@@ -119,7 +128,7 @@ tracked_text_files | xargs -0 "${SED_INPLACE[@]}" "${SED_ARGS[@]}"
 # Report what changed
 CHANGED_FILES=$(git diff --name-only)
 if [ -z "$CHANGED_FILES" ]; then
-  echo "No files were changed. The current version may not match any known patterns."
+  echo "No files were changed. The current version may not match any known patterns." >&2
   exit 1
 fi
 

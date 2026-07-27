@@ -48,6 +48,13 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-commit]
+      - id: bump-version-test
+        name: Bump version script tests
+        entry: ./scripts/bump-version.test.sh
+        language: system
+        pass_filenames: false
+        files: ^scripts/
+        stages: [pre-commit]
       - id: check
         name: Check
         entry: ./gradlew check
