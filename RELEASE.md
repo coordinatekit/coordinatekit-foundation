@@ -30,6 +30,6 @@ repositories {
 }
 
 dependencies {
-    implementation "org.coordinatekit.foundation:cli-brand:0.1.0-SNAPSHOT"
+    implementation "org.coordinatekit.foundation:cli-brand:0.2.0-SNAPSHOT"
 }
 ```
