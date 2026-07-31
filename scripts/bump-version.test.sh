@@ -468,6 +468,24 @@ EOF
   assert_file_contains README.md "See {@code com.example.widgets:beta} for details."
 }
 
+case_own_test_file_untouched() {
+  # The real scripts/bump-version.test.sh pins synthetic versions as test data, so the script
+  # excludes that one path. A sibling script in the same directory stays in scope.
+  write_file scripts/bump-version.test.sh <<'EOF'
+version=0.1.0-SNAPSHOT
+com.example.widgets:beta:9.9.9
+beta-9.9.9.jar
+EOF
+  write_file scripts/other.sh <<'EOF'
+version=0.1.0-SNAPSHOT
+EOF
+  bump 0.1.0
+  assert_status 0
+  assert_unchanged scripts/bump-version.test.sh
+  assert_file_contains scripts/other.sh "version=0.1.0"
+  assert_changed_files README.md gradle.properties scripts/other.sh
+}
+
 case_real_repo_docs_track_the_documented_invariants() {
   use_real_repo_docs
   bump 9.9.9
@@ -514,6 +532,7 @@ untracked_file_untouched
 missing_argument_rejected
 module_name_as_suffix_of_another_word
 coordinate_without_version_untouched
+own_test_file_untouched
 real_repo_docs_track_the_documented_invariants
 real_repo_snapshot_bump_leaves_release_docs
 "

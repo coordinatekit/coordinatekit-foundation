@@ -67,13 +67,20 @@ ESCAPED_CURRENT=$(printf '%s' "$CURRENT_VERSION" | sed 's/\./\\./g')
 ESCAPED_GROUP=$(printf '%s' "$GROUP" | sed 's/\./\\./g')
 ESCAPED_MODULES=$(printf '%s' "$MODULES" | sed 's/\./\\./g' | paste -sd'|' -)
 
+# This script's own test file is excluded by path. Its fixture repositories declare a version key
+# and its assertions name expected output coordinates and jar filenames; those literals are test
+# data, not project versions, and rewriting them silently breaks the suite. The exclusion is this
+# one exact path, so any other script stays in scope. Keep version literals out of this file's own
+# comments for the same reason.
+SELF_TEST=scripts/bump-version.test.sh
+
 # Restrict every rewrite step to tracked text files. Binary files (e.g. the tracked
 # gradle-wrapper.jar) can byte-match these patterns by coincidence, and sed -i risks
 # corrupting them; `grep -I` skips anything it detects as binary.
 tracked_text_files() {
   # `--null` rather than `-Z`: BSD grep (macOS) accepts -Z but silently ignores it, so
   # -Z leaves entries newline-separated and xargs -0 reads them as one giant filename.
-  git ls-files -z | xargs -0 grep -Il --null '' 2>/dev/null || true
+  git ls-files -z -- . ":(exclude)$SELF_TEST" | xargs -0 grep -Il --null '' 2>/dev/null || true
 }
 
 # Verify the current version exists in at least one tracked text file
