@@ -38,6 +38,23 @@ gitChangelog {
         def matcher = commit.message =~ /\(#(\d+)\)/
         matcher.find() ? matcher.group(1) : ""
     } as Helper))
+
+    // A deprecation warns about a removal one or more releases before the break, so it rides along
+    // with the commit that supersedes the API instead of earning a commit type of its own, and is
+    // marked with a `DEPRECATED:` footer on that commit. git-changelog-lib has no predicate for
+    // "carries this footer", so these two supply the pair the template needs, mirroring the built-in
+    // `ifContainsBreaking` and `ifCommitBreaking`.
+    def deprecates = { message ->
+        ConventionalCommitParser.getMessageParts(message as String)?.footers?.any {
+            it.token.equalsIgnoreCase("DEPRECATED")
+        } ?: false
+    }
+    handlebarsHelpers.add(new HelperParam("ifContainsDeprecated", { commits, options ->
+        commits.any { deprecates(it.message) } ? options.fn() : options.inverse()
+    } as Helper))
+    handlebarsHelpers.add(new HelperParam("ifCommitDeprecated", { commit, options ->
+        deprecates(commit.message) ? options.fn() : options.inverse()
+    } as Helper))
 }
 
 tasks.named('gitChangelog') {

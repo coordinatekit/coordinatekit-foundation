@@ -23,6 +23,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 {{/ifCommitBreaking}}
 {{/commits}}
 {{/ifContainsBreaking}}
+{{#ifContainsDeprecated commits}}
+
+### Deprecated
+
+{{#commits}}
+{{#ifCommitDeprecated .}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+{{#eachCommitFooter . tokenMatching="DEPRECATED"}}
+{{#ifFooterHasValue .}}
+  {{{value}}}
+{{/ifFooterHasValue}}
+{{/eachCommitFooter}}
+{{/ifCommitDeprecated}}
+{{/commits}}
+{{/ifContainsDeprecated}}
 {{#ifContainsType commits type="feat"}}
 
 ### Features
@@ -53,26 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 {{/ifCommitType}}
 {{/commits}}
 {{/ifContainsType}}
-{{#ifContainsType commits type="refactor"}}
-
-### Refactoring
-
-{{#commits}}
-{{#ifCommitType . type="refactor"}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
-{{/ifCommitType}}
-{{/commits}}
-{{/ifContainsType}}
-{{#ifContainsType commits type="docs"}}
-
-### Documentation
-
-{{#commits}}
-{{#ifCommitType . type="docs"}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
-{{/ifCommitType}}
-{{/commits}}
-{{/ifContainsType}}
 {{#ifContainsType commits type="build"}}
 
 ### Build
@@ -83,22 +78,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 {{/ifCommitType}}
 {{/commits}}
 {{/ifContainsType}}
-{{#ifContainsType commits type="ci"}}
+{{#ifContainsType commits type="revert"}}
 
-### CI
-
-{{#commits}}
-{{#ifCommitType . type="ci"}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
-{{/ifCommitType}}
-{{/commits}}
-{{/ifContainsType}}
-{{#ifContainsType commits type="test"}}
-
-### Tests
+### Reverts
 
 {{#commits}}
-{{#ifCommitType . type="test"}}
+{{#ifCommitType . type="revert"}}
 - {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
 {{/ifCommitType}}
 {{/commits}}
