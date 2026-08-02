@@ -1,6 +1,6 @@
 [versions]
 # api — update conservatively (security/bugs only)
-jspecify = "1.0.0"
+jspecify = "1.0.1"
 
 # implementation — keep current
 jline = "4.3.1"
