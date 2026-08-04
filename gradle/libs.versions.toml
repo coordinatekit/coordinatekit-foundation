@@ -7,7 +7,7 @@ jline = "4.3.1"
 slf4j = "2.0.18"
 
 # test — always latest
-junit = "6.0.3"
+junit = "6.1.2"
 
 # build — keep current
 errorprone = "2.50.0"
