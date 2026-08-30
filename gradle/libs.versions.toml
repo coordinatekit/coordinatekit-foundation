@@ -3,7 +3,7 @@
 jspecify = "1.0.0"
 
 # implementation — keep current
-jline = "4.3.1"
+jline = "4.4.0"
 slf4j = "2.0.18"
 
 # test — always latest
