@@ -11,7 +11,7 @@ junit = "6.1.2"
 
 # build — keep current
 errorprone = "2.50.0"
-errorprone-plugin = "5.1.0"
+errorprone-plugin = "5.1.1"
 gitchangelog-plugin = "3.1.2"
 nmcp = "1.6.1"
 spotless = "8.9.0"
