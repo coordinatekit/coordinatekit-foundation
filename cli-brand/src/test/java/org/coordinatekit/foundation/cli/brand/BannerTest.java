@@ -64,44 +64,48 @@ import java.util.stream.Stream;
  * deliberate exception, pinning the mark's width to catch an accidental change to {@code mark.txt}.
  */
 class BannerTest {
-    /** The escape that opens every ANSI control sequence. */
-    private static final String ESCAPE = "\u001b";
+    record ColorFormParameters(
+            String name,
+            ColorMode mode,
+            List<String> mustContain,
+            List<String> mustNotContain,
+            List<String> mustMatch
+    ) {}
 
-    /** The globe glyph appears only in the mark, never in the figlet words — a clean mark marker. */
-    private static final String MARK_GLYPH = "+";
+    record ColorModeParameters(
+            String name,
+            boolean ansiEnabled,
+            @Nullable String type,
+            @Nullable Integer maxColors,
+            @Nullable String colorterm,
+            ColorMode expected
+    ) {}
 
-    /**
-     * {@code X} appears in neither the brand art nor the mark, whose only glyphs are
-     * {@code _ , . - ' ( ) / \ ` < |} and {@code # + - . : =} — a clean product marker.
-     */
-    private static final String PRODUCT_GLYPH = "X";
+    record ComposeSweepParameters(String name, Banner.@Nullable Product product, int sweepCeiling) {}
+
+    record ComposeWidthParameters(String name, int width, int expectedWidth, boolean expectMark) {}
+
+    record MarkRowParameters(String name, String row, List<Segment> expectedSegments) {}
+
+    record OfParameters(String name, List<String> bigArt, List<String> smallArt, String accentHex, boolean accepted) {}
+
+    record ProductWidthParameters(
+            String name,
+            int width,
+            int expectedWidth,
+            boolean expectMark,
+            boolean expectProduct
+    ) {}
+
+    record TerminalWidthParameters(
+            String name,
+            int reportedColumns,
+            @Nullable String columnsEnvironment,
+            int expected
+    ) {}
 
     /** The widest line of coordinatekit-big.txt, measured at class-load time. */
     private static final int BRAND_BIG_WIDTH = artWidth("banner/coordinatekit-big.txt");
-
-    /** The widest line of coordinatekit-small.txt, measured at class-load time. */
-    private static final int BRAND_SMALL_WIDTH = artWidth("banner/coordinatekit-small.txt");
-
-    /** The one-space gutter Banner places between wordmark columns. */
-    private static final int GUTTER_WIDTH = 1;
-
-    /** The mark's height, measured from mark.txt at class-load time. */
-    private static final int MARK_HEIGHT = artHeight("banner/mark.txt");
-
-    /** The mark's width, measured from mark.txt; {@link #mark__widthPinned} is the deliberate pin. */
-    private static final int MARK_WIDTH = artWidth("banner/mark.txt");
-
-    /**
-     * Synthetic big product art width; mark-relative so the product rungs outrank the mark at any mark
-     * width.
-     */
-    private static final int PRODUCT_BIG_WIDTH = MARK_WIDTH + 17;
-
-    /**
-     * Synthetic small product art width; the gap below PRODUCT_BIG_WIDTH keeps the boundary rows on
-     * distinct rungs.
-     */
-    private static final int PRODUCT_SMALL_WIDTH = MARK_WIDTH + 7;
 
     /**
      * The truecolor SGR code for {@link ColorRole#BRAND} (Banner.java ColorRole constructor order),
@@ -110,22 +114,96 @@ class BannerTest {
      */
     private static final String BRAND_SGR = truecolorSgr(ColorRole.BRAND);
 
-    /** The truecolor SGR code for {@link ColorRole#PIN}, derived the same way as {@link #BRAND_SGR}. */
-    private static final String PIN_SGR = truecolorSgr(ColorRole.PIN);
+    /** The widest line of coordinatekit-small.txt, measured at class-load time. */
+    private static final int BRAND_SMALL_WIDTH = artWidth("banner/coordinatekit-small.txt");
+    /** The escape that opens every ANSI control sequence. */
+    private static final String ESCAPE = "\u001b";
 
     /**
      * The truecolor SGR code for {@link ColorRole#GLOBE}, derived the same way as {@link #BRAND_SGR}.
      */
     private static final String GLOBE_SGR = truecolorSgr(ColorRole.GLOBE);
 
+    /** The one-space gutter Banner places between wordmark columns. */
+    private static final int GUTTER_WIDTH = 1;
+
+    /** The SGR prefix that identifies the 256-indexed form. */
+    private static final String INDEXED_FORM = "38;5;";
+
+    /** The globe glyph appears only in the mark, never in the figlet words — a clean mark marker. */
+    private static final String MARK_GLYPH = "+";
+
+    /** The mark's height, measured from mark.txt at class-load time. */
+    private static final int MARK_HEIGHT = artHeight("banner/mark.txt");
+
+    /** The mark's width, measured from mark.txt; {@link #mark__widthPinned} is the deliberate pin. */
+    private static final int MARK_WIDTH = artWidth("banner/mark.txt");
+
+    /** The truecolor SGR code for {@link ColorRole#PIN}, derived the same way as {@link #BRAND_SGR}. */
+    private static final String PIN_SGR = truecolorSgr(ColorRole.PIN);
+
     /** The truecolor SGR code for the {@code #0C2238} accent used in product tests (12, 34, 56). */
     private static final String PRODUCT_ACCENT_SGR = "38;2;12;34;56";
+
+    /**
+     * Synthetic big product art width; mark-relative so the product rungs outrank the mark at any mark
+     * width.
+     */
+    private static final int PRODUCT_BIG_WIDTH = MARK_WIDTH + 17;
+
+    /**
+     * {@code X} appears in neither the brand art nor the mark, whose only glyphs are
+     * {@code _ , . - ' ( ) / \ ` < |} and {@code # + - . : =} — a clean product marker.
+     */
+    private static final String PRODUCT_GLYPH = "X";
+
+    /**
+     * Synthetic small product art width; the gap below PRODUCT_BIG_WIDTH keeps the boundary rows on
+     * distinct rungs.
+     */
+    private static final int PRODUCT_SMALL_WIDTH = MARK_WIDTH + 7;
 
     /** The SGR prefix that identifies the truecolor (24-bit RGB) form. */
     private static final String RGB_FORM = "38;2;";
 
-    /** The SGR prefix that identifies the 256-indexed form. */
-    private static final String INDEXED_FORM = "38;5;";
+    /**
+     * Measures the height of a banner art resource, dropping trailing blank lines the same way
+     * {@code Banner.load} does, so the two agree on height.
+     *
+     * @param resource the classpath resource path, resolved against {@link Banner}'s package
+     * @return the number of lines in the resource, excluding trailing blank lines
+     */
+    private static int artHeight(String resource) {
+        try (InputStream in = Banner.class.getResourceAsStream(resource)) {
+            Objects.requireNonNull(in, "missing banner resource: " + resource);
+            String content = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            List<String> lines = new ArrayList<>(List.of(content.split("\n", -1)));
+            while (!lines.isEmpty() && lines.getLast().isBlank()) {
+                lines.removeLast();
+            }
+            return lines.size();
+        } catch (IOException exception) {
+            throw new UncheckedIOException("failed to read banner resource: " + resource, exception);
+        }
+    }
+
+    /**
+     * Measures the widest line of a banner art resource, independently of {@link Banner}'s own loader:
+     * a bug in {@code Banner.load} cannot silently feed the expectations meant to catch it. Reads with
+     * a plain reader rather than {@code Banner.load}'s trimming of trailing blank lines, which cannot
+     * affect the max line width anyway, so the two agree.
+     *
+     * @param resource the classpath resource path, resolved against {@link Banner}'s package
+     * @return the width of the resource's widest line
+     */
+    private static int artWidth(String resource) {
+        try (InputStream in = Banner.class.getResourceAsStream(resource)) {
+            Objects.requireNonNull(in, "missing banner resource: " + resource);
+            return widestLine(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+        } catch (IOException exception) {
+            throw new UncheckedIOException("failed to read banner resource: " + resource, exception);
+        }
+    }
 
     static Stream<ColorModeParameters> colorMode__ladder() {
         return Stream.of(
@@ -263,36 +341,128 @@ class BannerTest {
         assertEquals(parameters.expected(), mode, parameters.name());
     }
 
-    static Stream<ComposeWidthParameters> compose__widthLadder() {
-        // The "T - 1" rows assume BRAND_BIG_WIDTH > BRAND_SMALL_WIDTH strictly, true today; a redraw
-        // violating that ordering arguably should fail one of these rows.
+    static Stream<ColorFormParameters> compose__colorForm() {
         return Stream.of(
-                new ComposeWidthParameters("big_at_exact_fit", BRAND_BIG_WIDTH, BRAND_BIG_WIDTH, true),
-                new ComposeWidthParameters("small_one_below_big", BRAND_BIG_WIDTH - 1, BRAND_SMALL_WIDTH, true),
-                new ComposeWidthParameters("small_at_exact_fit", BRAND_SMALL_WIDTH, BRAND_SMALL_WIDTH, true),
-                new ComposeWidthParameters("mark_only_one_below_small", BRAND_SMALL_WIDTH - 1, MARK_WIDTH, true),
-                new ComposeWidthParameters("mark_only_at_floor", MARK_WIDTH, MARK_WIDTH, true),
-                new ComposeWidthParameters("below_floor", MARK_WIDTH - 1, 0, false)
+                new ColorFormParameters(
+                        "monochrome_emits_no_ansi",
+                        ColorMode.MONOCHROME,
+                        List.of(),
+                        List.of(ESCAPE),
+                        List.of()
+                ),
+                new ColorFormParameters(
+                        "c16_emits_sixteen_color_sgr_not_indexed_or_rgb",
+                        ColorMode.C16,
+                        List.of(),
+                        List.of(INDEXED_FORM, RGB_FORM),
+                        List.of(ESCAPE + "\\[(3[0-7]|9[0-7])m")
+                ),
+                new ColorFormParameters(
+                        "c256_emits_indexed_not_rgb",
+                        ColorMode.C256,
+                        List.of(INDEXED_FORM),
+                        List.of(RGB_FORM),
+                        List.of()
+                ),
+                new ColorFormParameters(
+                        "truecolor_emits_rgb_form",
+                        ColorMode.TRUECOLOR,
+                        List.of(RGB_FORM),
+                        List.of(),
+                        List.of()
+                )
         );
     }
 
     @MethodSource
     @ParameterizedTest
-    void compose__widthLadder(ComposeWidthParameters parameters) {
+    void compose__colorForm(ColorFormParameters parameters) {
         // ACT //
-        String art = Banner.compose(parameters.width(), ColorMode.MONOCHROME, null);
+        String art = Banner.compose(BRAND_BIG_WIDTH, parameters.mode(), null);
 
         // ASSERT //
-        assertEquals(
-                parameters.expectedWidth(),
-                widestLine(art),
-                "width " + parameters.width() + " should produce block width " + parameters.expectedWidth()
+        for (String expected : parameters.mustContain()) {
+            assertTrue(art.contains(expected), parameters.name() + " should contain \"" + expected + "\"");
+        }
+        for (String unexpected : parameters.mustNotContain()) {
+            assertFalse(art.contains(unexpected), parameters.name() + " should not contain \"" + unexpected + "\"");
+        }
+        for (String pattern : parameters.mustMatch()) {
+            assertTrue(
+                    Pattern.compile(pattern).matcher(art).find(),
+                    parameters.name() + " should match pattern \"" + pattern + "\""
+            );
+        }
+    }
+
+    @Test
+    void compose__markCentersOnWordmark() {
+        // ACT //
+        String art = Banner.compose(BRAND_BIG_WIDTH, ColorMode.MONOCHROME, null);
+
+        // ASSERT //
+        List<String> markRows = List.of(art.split("\n", -1)).subList(0, MARK_HEIGHT);
+        int markLeft = markRows.stream().mapToInt(BannerTest::leadingSpaces).min().orElseThrow();
+        int blockWidth = widestLine(art);
+
+        assertEquals((blockWidth - MARK_WIDTH) / 2, markLeft, "the mark is centered on the wordmark block");
+    }
+
+    static Stream<ComposeSweepParameters> compose__neverWiderThanTerminal() {
+        Banner.Product standardProduct = Banner.Product.of(
+                List.of(PRODUCT_GLYPH.repeat(PRODUCT_BIG_WIDTH)),
+                List.of(PRODUCT_GLYPH.repeat(PRODUCT_SMALL_WIDTH)),
+                "#0C2238"
         );
-        assertEquals(
-                parameters.expectMark(),
-                art.contains(MARK_GLYPH),
-                "mark presence at width " + parameters.width() + " should be " + parameters.expectMark()
+        // Wide enough that the mark-plus-product-big rung is unreachable: the LAYOUTS Javadoc
+        // (Banner.java:240-246) documents this as a skipped rung, not a broken layout.
+        int pathologicalSmallWidth = 3;
+        int pathologicalBigWidth = BRAND_SMALL_WIDTH + GUTTER_WIDTH + pathologicalSmallWidth + 10;
+        Banner.Product pathologicalProduct = Banner.Product.of(
+                List.of(PRODUCT_GLYPH.repeat(pathologicalBigWidth)),
+                List.of(PRODUCT_GLYPH.repeat(pathologicalSmallWidth)),
+                "#0C2238"
         );
+        return Stream.of(
+                new ComposeSweepParameters("brand_only", null, BRAND_BIG_WIDTH + 5),
+                new ComposeSweepParameters(
+                        "standard_product",
+                        standardProduct,
+                        BRAND_BIG_WIDTH + GUTTER_WIDTH + PRODUCT_BIG_WIDTH + 5
+                ),
+                new ComposeSweepParameters(
+                        "pathological_product_skips_a_rung",
+                        pathologicalProduct,
+                        BRAND_BIG_WIDTH + GUTTER_WIDTH + pathologicalBigWidth + 5
+                )
+        );
+    }
+
+    @MethodSource
+    @ParameterizedTest
+    void compose__neverWiderThanTerminal(ComposeSweepParameters parameters) {
+        // ACT & ASSERT //
+        for (int w = -2; w <= parameters.sweepCeiling(); w++) {
+            String art = Banner.compose(w, ColorMode.MONOCHROME, parameters.product());
+            assertTrue(
+                    widestLine(art) <= Math.max(w, 0),
+                    parameters.name() + " at width " + w + " should never exceed the terminal width"
+            );
+        }
+    }
+
+    @Test
+    void compose__productSeamShowsBrandAndProductColors() {
+        // ARRANGE //
+        Banner.Product product = Banner.Product.of(List.of("Xx"), List.of("x"), "#0C2238");
+
+        // ACT //
+        // The exact both-big threshold for this inline 2-wide fixture.
+        String art = Banner.compose(BRAND_BIG_WIDTH + GUTTER_WIDTH + 2, ColorMode.TRUECOLOR, product);
+
+        // ASSERT //
+        assertTrue(art.contains(BRAND_SGR), "the CoordinateKit word should carry the brand color");
+        assertTrue(art.contains(PRODUCT_ACCENT_SGR), "the product word should carry the product accent color");
     }
 
     static Stream<ProductWidthParameters> compose__productWidthLadder() {
@@ -367,101 +537,97 @@ class BannerTest {
         );
     }
 
-    static Stream<ComposeSweepParameters> compose__neverWiderThanTerminal() {
-        Banner.Product standardProduct = Banner.Product.of(
-                List.of(PRODUCT_GLYPH.repeat(PRODUCT_BIG_WIDTH)),
-                List.of(PRODUCT_GLYPH.repeat(PRODUCT_SMALL_WIDTH)),
-                "#0C2238"
-        );
-        // Wide enough that the mark-plus-product-big rung is unreachable: the LAYOUTS Javadoc
-        // (Banner.java:240-246) documents this as a skipped rung, not a broken layout.
-        int pathologicalSmallWidth = 3;
-        int pathologicalBigWidth = BRAND_SMALL_WIDTH + GUTTER_WIDTH + pathologicalSmallWidth + 10;
-        Banner.Product pathologicalProduct = Banner.Product.of(
-                List.of(PRODUCT_GLYPH.repeat(pathologicalBigWidth)),
-                List.of(PRODUCT_GLYPH.repeat(pathologicalSmallWidth)),
-                "#0C2238"
-        );
-        return Stream.of(
-                new ComposeSweepParameters("brand_only", null, BRAND_BIG_WIDTH + 5),
-                new ComposeSweepParameters(
-                        "standard_product",
-                        standardProduct,
-                        BRAND_BIG_WIDTH + GUTTER_WIDTH + PRODUCT_BIG_WIDTH + 5
-                ),
-                new ComposeSweepParameters(
-                        "pathological_product_skips_a_rung",
-                        pathologicalProduct,
-                        BRAND_BIG_WIDTH + GUTTER_WIDTH + pathologicalBigWidth + 5
-                )
-        );
-    }
-
-    @MethodSource
-    @ParameterizedTest
-    void compose__neverWiderThanTerminal(ComposeSweepParameters parameters) {
-        // ACT & ASSERT //
-        for (int w = -2; w <= parameters.sweepCeiling(); w++) {
-            String art = Banner.compose(w, ColorMode.MONOCHROME, parameters.product());
-            assertTrue(
-                    widestLine(art) <= Math.max(w, 0),
-                    parameters.name() + " at width " + w + " should never exceed the terminal width"
-            );
-        }
-    }
-
-    static Stream<ColorFormParameters> compose__colorForm() {
-        return Stream.of(
-                new ColorFormParameters(
-                        "monochrome_emits_no_ansi",
-                        ColorMode.MONOCHROME,
-                        List.of(),
-                        List.of(ESCAPE),
-                        List.of()
-                ),
-                new ColorFormParameters(
-                        "c16_emits_sixteen_color_sgr_not_indexed_or_rgb",
-                        ColorMode.C16,
-                        List.of(),
-                        List.of(INDEXED_FORM, RGB_FORM),
-                        List.of(ESCAPE + "\\[(3[0-7]|9[0-7])m")
-                ),
-                new ColorFormParameters(
-                        "c256_emits_indexed_not_rgb",
-                        ColorMode.C256,
-                        List.of(INDEXED_FORM),
-                        List.of(RGB_FORM),
-                        List.of()
-                ),
-                new ColorFormParameters(
-                        "truecolor_emits_rgb_form",
-                        ColorMode.TRUECOLOR,
-                        List.of(RGB_FORM),
-                        List.of(),
-                        List.of()
-                )
-        );
-    }
-
-    @MethodSource
-    @ParameterizedTest
-    void compose__colorForm(ColorFormParameters parameters) {
+    @Test
+    void compose__truecolorColorsMarkAndText() {
         // ACT //
-        String art = Banner.compose(BRAND_BIG_WIDTH, parameters.mode(), null);
+        // BRAND_BIG_WIDTH keeps the brand-only banner on the big rung so BRAND_SGR is asserted at the
+        // width it is actually emitted.
+        String art = Banner.compose(BRAND_BIG_WIDTH, ColorMode.TRUECOLOR, null);
 
         // ASSERT //
-        for (String expected : parameters.mustContain()) {
-            assertTrue(art.contains(expected), parameters.name() + " should contain \"" + expected + "\"");
+        assertTrue(art.contains(PIN_SGR), "mark pin glyphs should carry the lightened pin color");
+        assertTrue(art.contains(GLOBE_SGR), "mark globe glyphs should carry the globe color");
+        assertTrue(art.contains(BRAND_SGR), "the CoordinateKit word should carry the brand color");
+
+        Set<String> knownCodes = Set.of(PIN_SGR, GLOBE_SGR, BRAND_SGR);
+        Set<String> found = Pattern.compile("38;2;\\d+;\\d+;\\d+")
+                .matcher(art)
+                .results()
+                .map(MatchResult::group)
+                .collect(Collectors.toSet());
+        assertTrue(knownCodes.containsAll(found), "no product accent leaks into the brand-only banner: found " + found);
+    }
+
+    static Stream<ComposeWidthParameters> compose__widthLadder() {
+        // The "T - 1" rows assume BRAND_BIG_WIDTH > BRAND_SMALL_WIDTH strictly, true today; a redraw
+        // violating that ordering arguably should fail one of these rows.
+        return Stream.of(
+                new ComposeWidthParameters("big_at_exact_fit", BRAND_BIG_WIDTH, BRAND_BIG_WIDTH, true),
+                new ComposeWidthParameters("small_one_below_big", BRAND_BIG_WIDTH - 1, BRAND_SMALL_WIDTH, true),
+                new ComposeWidthParameters("small_at_exact_fit", BRAND_SMALL_WIDTH, BRAND_SMALL_WIDTH, true),
+                new ComposeWidthParameters("mark_only_one_below_small", BRAND_SMALL_WIDTH - 1, MARK_WIDTH, true),
+                new ComposeWidthParameters("mark_only_at_floor", MARK_WIDTH, MARK_WIDTH, true),
+                new ComposeWidthParameters("below_floor", MARK_WIDTH - 1, 0, false)
+        );
+    }
+
+    @MethodSource
+    @ParameterizedTest
+    void compose__widthLadder(ComposeWidthParameters parameters) {
+        // ACT //
+        String art = Banner.compose(parameters.width(), ColorMode.MONOCHROME, null);
+
+        // ASSERT //
+        assertEquals(
+                parameters.expectedWidth(),
+                widestLine(art),
+                "width " + parameters.width() + " should produce block width " + parameters.expectedWidth()
+        );
+        assertEquals(
+                parameters.expectMark(),
+                art.contains(MARK_GLYPH),
+                "mark presence at width " + parameters.width() + " should be " + parameters.expectMark()
+        );
+    }
+
+    @Test
+    void compose__wordBlockRectangular() {
+        // ARRANGE //
+        Banner.Product product = Banner.Product.of(List.of("XX", "X"), List.of("X"), "#0C2238");
+
+        // ACT //
+        // The exact both-big threshold for this inline 2-wide fixture; the brand column is taller than
+        // the product's 2 rows (the blank-fill path) and row 1's "X" is narrower than the column (the
+        // rightPad path).
+        String art = Banner.compose(BRAND_BIG_WIDTH + GUTTER_WIDTH + 2, ColorMode.MONOCHROME, product);
+
+        // ASSERT //
+        List<String> lines = List.of(art.split("\n", -1));
+        List<String> textRows = lines.subList(MARK_HEIGHT, lines.size() - 1);
+        int expectedWidth = textRows.getFirst().length();
+        for (String row : textRows) {
+            assertEquals(expectedWidth, row.length(), "every text row should be the same width: \"" + row + "\"");
         }
-        for (String unexpected : parameters.mustNotContain()) {
-            assertFalse(art.contains(unexpected), parameters.name() + " should not contain \"" + unexpected + "\"");
+    }
+
+    /** Returns the count of leading space characters in {@code line}. */
+    private static int leadingSpaces(String line) {
+        int count = 0;
+        while (count < line.length() && line.charAt(count) == ' ') {
+            count++;
         }
-        for (String pattern : parameters.mustMatch()) {
-            assertTrue(
-                    Pattern.compile(pattern).matcher(art).find(),
-                    parameters.name() + " should match pattern \"" + pattern + "\""
-            );
-        }
+        return count;
+    }
+
+    /**
+     * The single deliberate pin on the art: every other width expectation in this file is measured off
+     * the resources, so a redrawn wordmark breaks nothing here, and an accidental change to
+     * {@code mark.txt} fails exactly this test.
+     */
+    @Test
+    void mark__widthPinned() {
+        // ASSERT //
+        assertEquals(33, MARK_WIDTH, "mark.txt should be 33 columns wide; a deliberate redraw updates this pin");
     }
 
     static Stream<MarkRowParameters> markSegments() {
@@ -560,112 +726,6 @@ class BannerTest {
         );
     }
 
-    static Stream<TerminalWidthParameters> terminalWidth__fallbackLadder() {
-        return Stream.of(
-                new TerminalWidthParameters("reported_wins_without_columns", 132, null, 132),
-                new TerminalWidthParameters("reported_wins_over_columns", 132, "200", 132),
-                new TerminalWidthParameters("zero_reported_falls_through_to_columns", 0, "200", 200),
-                new TerminalWidthParameters("negative_reported_falls_through_to_columns", -1, "200", 200),
-                new TerminalWidthParameters("columns_trimmed", 0, "  200  ", 200),
-                new TerminalWidthParameters("columns_zero_falls_through_to_default", 0, "0", 80),
-                new TerminalWidthParameters("columns_negative_falls_through_to_default", 0, "-5", 80),
-                new TerminalWidthParameters("columns_unparseable_falls_through_to_default", 0, "abc", 80),
-                new TerminalWidthParameters("columns_empty_falls_through_to_default", 0, "", 80),
-                new TerminalWidthParameters("columns_blank_falls_through_to_default", 0, "   ", 80),
-                new TerminalWidthParameters("columns_int_overflow_falls_through_to_default", 0, "99999999999", 80),
-                new TerminalWidthParameters("columns_null_falls_through_to_default", 0, null, 80)
-        );
-    }
-
-    @MethodSource
-    @ParameterizedTest
-    void terminalWidth__fallbackLadder(TerminalWidthParameters parameters) {
-        // ACT //
-        int width = Banner.terminalWidth(parameters.reportedColumns(), parameters.columnsEnvironment());
-
-        // ASSERT //
-        assertEquals(parameters.expected(), width, parameters.name());
-    }
-
-    @Test
-    void compose__markCentersOnWordmark() {
-        // ACT //
-        String art = Banner.compose(BRAND_BIG_WIDTH, ColorMode.MONOCHROME, null);
-
-        // ASSERT //
-        List<String> markRows = List.of(art.split("\n", -1)).subList(0, MARK_HEIGHT);
-        int markLeft = markRows.stream().mapToInt(BannerTest::leadingSpaces).min().orElseThrow();
-        int blockWidth = widestLine(art);
-
-        assertEquals((blockWidth - MARK_WIDTH) / 2, markLeft, "the mark is centered on the wordmark block");
-    }
-
-    @Test
-    void compose__productSeamShowsBrandAndProductColors() {
-        // ARRANGE //
-        Banner.Product product = Banner.Product.of(List.of("Xx"), List.of("x"), "#0C2238");
-
-        // ACT //
-        // The exact both-big threshold for this inline 2-wide fixture.
-        String art = Banner.compose(BRAND_BIG_WIDTH + GUTTER_WIDTH + 2, ColorMode.TRUECOLOR, product);
-
-        // ASSERT //
-        assertTrue(art.contains(BRAND_SGR), "the CoordinateKit word should carry the brand color");
-        assertTrue(art.contains(PRODUCT_ACCENT_SGR), "the product word should carry the product accent color");
-    }
-
-    @Test
-    void compose__truecolorColorsMarkAndText() {
-        // ACT //
-        // BRAND_BIG_WIDTH keeps the brand-only banner on the big rung so BRAND_SGR is asserted at the
-        // width it is actually emitted.
-        String art = Banner.compose(BRAND_BIG_WIDTH, ColorMode.TRUECOLOR, null);
-
-        // ASSERT //
-        assertTrue(art.contains(PIN_SGR), "mark pin glyphs should carry the lightened pin color");
-        assertTrue(art.contains(GLOBE_SGR), "mark globe glyphs should carry the globe color");
-        assertTrue(art.contains(BRAND_SGR), "the CoordinateKit word should carry the brand color");
-
-        Set<String> knownCodes = Set.of(PIN_SGR, GLOBE_SGR, BRAND_SGR);
-        Set<String> found = Pattern.compile("38;2;\\d+;\\d+;\\d+")
-                .matcher(art)
-                .results()
-                .map(MatchResult::group)
-                .collect(Collectors.toSet());
-        assertTrue(knownCodes.containsAll(found), "no product accent leaks into the brand-only banner: found " + found);
-    }
-
-    @Test
-    void compose__wordBlockRectangular() {
-        // ARRANGE //
-        Banner.Product product = Banner.Product.of(List.of("XX", "X"), List.of("X"), "#0C2238");
-
-        // ACT //
-        // The exact both-big threshold for this inline 2-wide fixture; the brand column is taller than
-        // the product's 2 rows (the blank-fill path) and row 1's "X" is narrower than the column (the
-        // rightPad path).
-        String art = Banner.compose(BRAND_BIG_WIDTH + GUTTER_WIDTH + 2, ColorMode.MONOCHROME, product);
-
-        // ASSERT //
-        List<String> lines = List.of(art.split("\n", -1));
-        List<String> textRows = lines.subList(MARK_HEIGHT, lines.size() - 1);
-        int expectedWidth = textRows.getFirst().length();
-        for (String row : textRows) {
-            assertEquals(expectedWidth, row.length(), "every text row should be the same width: \"" + row + "\"");
-        }
-    }
-
-    /**
-     * The single deliberate pin on the art: every other width expectation in this file is measured off
-     * the resources, so a redrawn wordmark breaks nothing here, and an accidental change to
-     * {@code mark.txt} fails exactly this test.
-     */
-    @Test
-    void mark__widthPinned() {
-        // ASSERT //
-        assertEquals(33, MARK_WIDTH, "mark.txt should be 33 columns wide; a deliberate redraw updates this pin");
-    }
-
     /**
      * The only test in the file that builds a <em>system</em> terminal. JLine tracks the system
      * terminal process-wide, so a second build-and-close cycle elsewhere in this JVM would be a
@@ -726,6 +786,33 @@ class BannerTest {
         );
     }
 
+    static Stream<TerminalWidthParameters> terminalWidth__fallbackLadder() {
+        return Stream.of(
+                new TerminalWidthParameters("reported_wins_without_columns", 132, null, 132),
+                new TerminalWidthParameters("reported_wins_over_columns", 132, "200", 132),
+                new TerminalWidthParameters("zero_reported_falls_through_to_columns", 0, "200", 200),
+                new TerminalWidthParameters("negative_reported_falls_through_to_columns", -1, "200", 200),
+                new TerminalWidthParameters("columns_trimmed", 0, "  200  ", 200),
+                new TerminalWidthParameters("columns_zero_falls_through_to_default", 0, "0", 80),
+                new TerminalWidthParameters("columns_negative_falls_through_to_default", 0, "-5", 80),
+                new TerminalWidthParameters("columns_unparseable_falls_through_to_default", 0, "abc", 80),
+                new TerminalWidthParameters("columns_empty_falls_through_to_default", 0, "", 80),
+                new TerminalWidthParameters("columns_blank_falls_through_to_default", 0, "   ", 80),
+                new TerminalWidthParameters("columns_int_overflow_falls_through_to_default", 0, "99999999999", 80),
+                new TerminalWidthParameters("columns_null_falls_through_to_default", 0, null, 80)
+        );
+    }
+
+    @MethodSource
+    @ParameterizedTest
+    void terminalWidth__fallbackLadder(TerminalWidthParameters parameters) {
+        // ACT //
+        int width = Banner.terminalWidth(parameters.reportedColumns(), parameters.columnsEnvironment());
+
+        // ASSERT //
+        assertEquals(parameters.expected(), width, parameters.name());
+    }
+
     /**
      * The one real-terminal test in the file. Everything else drives
      * {@link Banner#colorMode(boolean, String, Integer, String)} and
@@ -755,54 +842,6 @@ class BannerTest {
     }
 
     /**
-     * Measures the height of a banner art resource, dropping trailing blank lines the same way
-     * {@code Banner.load} does, so the two agree on height.
-     *
-     * @param resource the classpath resource path, resolved against {@link Banner}'s package
-     * @return the number of lines in the resource, excluding trailing blank lines
-     */
-    private static int artHeight(String resource) {
-        try (InputStream in = Banner.class.getResourceAsStream(resource)) {
-            Objects.requireNonNull(in, "missing banner resource: " + resource);
-            String content = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            List<String> lines = new ArrayList<>(List.of(content.split("\n", -1)));
-            while (!lines.isEmpty() && lines.getLast().isBlank()) {
-                lines.removeLast();
-            }
-            return lines.size();
-        } catch (IOException exception) {
-            throw new UncheckedIOException("failed to read banner resource: " + resource, exception);
-        }
-    }
-
-    /**
-     * Measures the widest line of a banner art resource, independently of {@link Banner}'s own loader:
-     * a bug in {@code Banner.load} cannot silently feed the expectations meant to catch it. Reads with
-     * a plain reader rather than {@code Banner.load}'s trimming of trailing blank lines, which cannot
-     * affect the max line width anyway, so the two agree.
-     *
-     * @param resource the classpath resource path, resolved against {@link Banner}'s package
-     * @return the width of the resource's widest line
-     */
-    private static int artWidth(String resource) {
-        try (InputStream in = Banner.class.getResourceAsStream(resource)) {
-            Objects.requireNonNull(in, "missing banner resource: " + resource);
-            return widestLine(new String(in.readAllBytes(), StandardCharsets.UTF_8));
-        } catch (IOException exception) {
-            throw new UncheckedIOException("failed to read banner resource: " + resource, exception);
-        }
-    }
-
-    /** Returns the count of leading space characters in {@code line}. */
-    private static int leadingSpaces(String line) {
-        int count = 0;
-        while (count < line.length() && line.charAt(count) == ' ') {
-            count++;
-        }
-        return count;
-    }
-
-    /**
      * Returns the truecolor SGR parameter string for {@code role}'s own RGB, so a palette retune in
      * {@link ColorRole} cannot break the structural assertions built on {@link #BRAND_SGR},
      * {@link #PIN_SGR}, and {@link #GLOBE_SGR}.
@@ -822,44 +861,4 @@ class BannerTest {
         }
         return widest;
     }
-
-    record ColorFormParameters(
-            String name,
-            ColorMode mode,
-            List<String> mustContain,
-            List<String> mustNotContain,
-            List<String> mustMatch
-    ) {}
-
-    record ColorModeParameters(
-            String name,
-            boolean ansiEnabled,
-            @Nullable String type,
-            @Nullable Integer maxColors,
-            @Nullable String colorterm,
-            ColorMode expected
-    ) {}
-
-    record ComposeSweepParameters(String name, Banner.@Nullable Product product, int sweepCeiling) {}
-
-    record ComposeWidthParameters(String name, int width, int expectedWidth, boolean expectMark) {}
-
-    record MarkRowParameters(String name, String row, List<Segment> expectedSegments) {}
-
-    record OfParameters(String name, List<String> bigArt, List<String> smallArt, String accentHex, boolean accepted) {}
-
-    record ProductWidthParameters(
-            String name,
-            int width,
-            int expectedWidth,
-            boolean expectMark,
-            boolean expectProduct
-    ) {}
-
-    record TerminalWidthParameters(
-            String name,
-            int reportedColumns,
-            @Nullable String columnsEnvironment,
-            int expected
-    ) {}
 }

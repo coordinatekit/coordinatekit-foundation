@@ -135,6 +135,34 @@ public final class Banner {
      */
     public interface Product {
         /**
+         * The blue component of the accent color, 0-255.
+         *
+         * @return the blue component of the accent color
+         */
+        int accentBlue();
+
+        /**
+         * The green component of the accent color, 0-255.
+         *
+         * @return the green component of the accent color
+         */
+        int accentGreen();
+
+        /**
+         * The red component of the accent color, 0-255.
+         *
+         * @return the red component of the accent color
+         */
+        int accentRed();
+
+        /**
+         * The large wordmark art, one string per row.
+         *
+         * @return the large wordmark art
+         */
+        List<String> bigArt();
+
+        /**
          * Builds a product from in-memory wordmark art and an accent color.
          *
          * @param bigArt the large wordmark art, one string per row
@@ -167,47 +195,11 @@ public final class Banner {
         }
 
         /**
-         * The blue component of the accent color, 0-255.
-         *
-         * @return the blue component of the accent color
-         */
-        int accentBlue();
-
-        /**
-         * The green component of the accent color, 0-255.
-         *
-         * @return the green component of the accent color
-         */
-        int accentGreen();
-
-        /**
-         * The red component of the accent color, 0-255.
-         *
-         * @return the red component of the accent color
-         */
-        int accentRed();
-
-        /**
-         * The large wordmark art, one string per row.
-         *
-         * @return the large wordmark art
-         */
-        List<String> bigArt();
-
-        /**
          * The small wordmark art, one string per row.
          *
          * @return the small wordmark art
          */
         List<String> smallArt();
-    }
-
-    /** A run of contiguous characters sharing one {@link ColorRole}. */
-    record Segment(ColorRole role, String text) {}
-
-    /** The two sizes each wordmark is cut in; {@link Layout} selects between them. */
-    enum Size {
-        BIG, SMALL
     }
 
     /** The default brand colors live on {@link ColorRole}; only the product accent varies. */
@@ -218,6 +210,14 @@ public final class Banner {
             int accentGreen,
             int accentBlue
     ) implements Product {}
+
+    /** A run of contiguous characters sharing one {@link ColorRole}. */
+    record Segment(ColorRole role, String text) {}
+
+    /** The two sizes each wordmark is cut in; {@link Layout} selects between them. */
+    enum Size {
+        BIG, SMALL
+    }
 
     private static final List<String> COORDINATEKIT_BIG = load("banner/coordinatekit-big.txt");
     private static final List<String> COORDINATEKIT_SMALL = load("banner/coordinatekit-small.txt");
@@ -276,69 +276,6 @@ public final class Banner {
      */
     public Banner(Product product) {
         this.product = Objects.requireNonNull(product, "product must not be null");
-    }
-
-    /**
-     * Renders the art for a given terminal width, color mode, and product. A {@code null} product
-     * selects the brand-only path (the "CoordinateKit" wordmark alone, dropping to the mark alone as
-     * the window narrows); otherwise the product wordmark is shown beside the brand. The returned block
-     * ends with a trailing newline after its last line, or is empty when {@code width} is below the
-     * smallest layout.
-     *
-     * @param width the terminal width in columns
-     * @param mode the color capability to emit for
-     * @param product the product wordmark and accent color to render, or {@code null} for brand-only
-     * @return the rendered art block, or the empty string when nothing fits
-     */
-    static String compose(int width, ColorMode mode, @Nullable Product product) {
-        Layout layout = layout(width, product);
-        if (layout == null) {
-            return "";
-        }
-
-        List<List<Segment>> textRows = wordRows(columns(layout, product));
-
-        int textWidth = blockWidth(textRows);
-        int markWidth = layout.mark() ? MARK_WIDTH : 0;
-        int blockWidth = Math.max(markWidth, textWidth);
-        int markPadding = (blockWidth - markWidth) / 2;
-        int textPadding = (blockWidth - textWidth) / 2;
-
-        List<String> lines = new ArrayList<>();
-        if (layout.mark()) {
-            for (String markRow : MARK) {
-                lines.add(renderLine(markPadding, markSegments(markRow), mode, product));
-            }
-        }
-        for (List<Segment> textRow : textRows) {
-            lines.add(renderLine(textPadding, textRow, mode, product));
-        }
-        return String.join("\n", lines) + "\n";
-    }
-
-    /**
-     * Renders the brand art for the attached terminal. Probes the terminal lazily, at render time
-     * rather than construction, so a run that never prints the banner pays no probe cost, then
-     * delegates to {@link #renderArt}, which owns the blank line that separates the art from whatever
-     * the consumer prints next.
-     *
-     * @param ansiEnabled the caller-owned color-off policy; the caller is expected to fold in
-     *        {@code NO_COLOR}, {@code CLICOLOR}/{@code CLICOLOR_FORCE}, and its own {@code --ansi}
-     *        wiring
-     * @return the rendered banner, or the empty string when no art fits
-     */
-    public String render(boolean ansiEnabled) {
-        int width;
-        ColorMode mode;
-        try (Terminal terminal = TerminalBuilder.builder().system(true).dumb(true).build()) {
-            width = terminalWidth(terminal);
-            mode = colorMode(terminal, ansiEnabled);
-        } catch (IOException exception) {
-            // A terminal we cannot probe degrades to a safe, uncolored default rather than failing.
-            width = 80;
-            mode = ColorMode.MONOCHROME;
-        }
-        return renderArt(width, mode);
     }
 
     /** Returns the width of the widest row in a block of colored rows. */
@@ -449,6 +386,44 @@ public final class Banner {
     }
 
     /**
+     * Renders the art for a given terminal width, color mode, and product. A {@code null} product
+     * selects the brand-only path (the "CoordinateKit" wordmark alone, dropping to the mark alone as
+     * the window narrows); otherwise the product wordmark is shown beside the brand. The returned block
+     * ends with a trailing newline after its last line, or is empty when {@code width} is below the
+     * smallest layout.
+     *
+     * @param width the terminal width in columns
+     * @param mode the color capability to emit for
+     * @param product the product wordmark and accent color to render, or {@code null} for brand-only
+     * @return the rendered art block, or the empty string when nothing fits
+     */
+    static String compose(int width, ColorMode mode, @Nullable Product product) {
+        Layout layout = layout(width, product);
+        if (layout == null) {
+            return "";
+        }
+
+        List<List<Segment>> textRows = wordRows(columns(layout, product));
+
+        int textWidth = blockWidth(textRows);
+        int markWidth = layout.mark() ? MARK_WIDTH : 0;
+        int blockWidth = Math.max(markWidth, textWidth);
+        int markPadding = (blockWidth - markWidth) / 2;
+        int textPadding = (blockWidth - textWidth) / 2;
+
+        List<String> lines = new ArrayList<>();
+        if (layout.mark()) {
+            for (String markRow : MARK) {
+                lines.add(renderLine(markPadding, markSegments(markRow), mode, product));
+            }
+        }
+        for (List<Segment> textRow : textRows) {
+            lines.add(renderLine(textPadding, textRow, mode, product));
+        }
+        return String.join("\n", lines) + "\n";
+    }
+
+    /**
      * Selects the layout for {@code width} as the richest one whose rendered width fits. Returns
      * {@code null} when even the leanest rung — the mark alone — is wider than the terminal, in which
      * case no art is shown. Walks {@link #LAYOUTS} richest-first and takes the first that fits.
@@ -543,6 +518,31 @@ public final class Banner {
             segments.add(new Segment(runRole, run.toString()));
         }
         return segments;
+    }
+
+    /**
+     * Renders the brand art for the attached terminal. Probes the terminal lazily, at render time
+     * rather than construction, so a run that never prints the banner pays no probe cost, then
+     * delegates to {@link #renderArt}, which owns the blank line that separates the art from whatever
+     * the consumer prints next.
+     *
+     * @param ansiEnabled the caller-owned color-off policy; the caller is expected to fold in
+     *        {@code NO_COLOR}, {@code CLICOLOR}/{@code CLICOLOR_FORCE}, and its own {@code --ansi}
+     *        wiring
+     * @return the rendered banner, or the empty string when no art fits
+     */
+    public String render(boolean ansiEnabled) {
+        int width;
+        ColorMode mode;
+        try (Terminal terminal = TerminalBuilder.builder().system(true).dumb(true).build()) {
+            width = terminalWidth(terminal);
+            mode = colorMode(terminal, ansiEnabled);
+        } catch (IOException exception) {
+            // A terminal we cannot probe degrades to a safe, uncolored default rather than failing.
+            width = 80;
+            mode = ColorMode.MONOCHROME;
+        }
+        return renderArt(width, mode);
     }
 
     /**
