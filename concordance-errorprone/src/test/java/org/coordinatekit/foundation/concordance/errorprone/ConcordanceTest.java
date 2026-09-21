@@ -115,6 +115,22 @@ class ConcordanceTest {
         return helper().setArgs(Arrays.asList(args));
     }
 
+    @Test
+    void matchClass__anonymousClassBodyChecked() {
+        // ARRANGE + ACT + ASSERT //
+        helper().addSourceLines(
+                "Fixture.java",
+                "class Fixture {",
+                "    Runnable task = new Runnable() {",
+                "        public void run() {}",
+                "",
+                "        // BUG: Diagnostic contains: field count declared after method run()",
+                "        int count;",
+                "    };",
+                "}"
+        ).doTest();
+    }
+
     static Stream<SequenceParameters> matchClass__categorySequence() {
         return Stream.of(
                 new SequenceParameters(
@@ -191,6 +207,19 @@ class ConcordanceTest {
                 .addSourceLines("Fixture.java", "class Fixture {", "    int a;", "}")
                 .expectNoDiagnostics()
                 .doTest();
+    }
+
+    @Test
+    void matchClass__enumConstantsOutOfOrder() {
+        // ARRANGE + ACT + ASSERT //
+        helper().addSourceLines(
+                "Fixture.java",
+                "enum Fixture {",
+                "    ZETA,",
+                "    // BUG: Diagnostic contains: enum constant ALPHA out of order with enum constant ZETA",
+                "    ALPHA",
+                "}"
+        ).doTest();
     }
 
     @Test
@@ -395,6 +424,23 @@ class ConcordanceTest {
                 "    void beta() {}",
                 "}"
         ).expectNoDiagnostics().doTest();
+    }
+
+    @Test
+    void matchClass__recordExplicitConstructors() {
+        // ARRANGE + ACT + ASSERT //
+        helper().addSourceLines(
+                "Fixture.java",
+                "record Fixture(int a) {",
+                "    Fixture {}",
+                "",
+                "    // BUG: Diagnostic contains: constructor with 0 parameters out of order with constructor"
+                        + " with 1 parameter",
+                "    Fixture() {",
+                "        this(0);",
+                "    }",
+                "}"
+        ).doTest();
     }
 
     @Test
