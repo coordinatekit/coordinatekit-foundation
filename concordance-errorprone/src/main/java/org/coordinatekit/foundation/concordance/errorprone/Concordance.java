@@ -164,8 +164,8 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
      */
     @Inject
     public Concordance(ErrorProneFlags flags) {
-        this.lifecycleAnnotations = List.copyOf(flags.getListOrEmpty(LIFECYCLE_ANNOTATIONS));
-        this.scaffoldingFieldTypes = List.copyOf(flags.getListOrEmpty(SCAFFOLDING_FIELD_TYPES));
+        this.lifecycleAnnotations = names(flags, LIFECYCLE_ANNOTATIONS);
+        this.scaffoldingFieldTypes = names(flags, SCAFFOLDING_FIELD_TYPES);
     }
 
     /**
@@ -351,6 +351,19 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
             return new Member(Category.CONSTRUCTOR, "", arity, "constructor with " + parameters);
         }
         return new Member(Category.METHOD, sortKey(tree.getName()), 0, "method " + tree.getName() + "()");
+    }
+
+    /**
+     * Reads a list-valued flag, trimming each entry and dropping blank ones. An empty flag value such
+     * as {@code -XepOpt:Concordance:ScaffoldingFieldTypes=} arrives as a single empty entry, which
+     * would otherwise be looked up as a type name.
+     *
+     * @param flags the flags the compilation was invoked with
+     * @param key the flag to read
+     * @return the non-blank entries, in order
+     */
+    private static List<String> names(ErrorProneFlags flags, String key) {
+        return flags.getListOrEmpty(key).stream().map(String::trim).filter(name -> !name.isEmpty()).toList();
     }
 
     /**

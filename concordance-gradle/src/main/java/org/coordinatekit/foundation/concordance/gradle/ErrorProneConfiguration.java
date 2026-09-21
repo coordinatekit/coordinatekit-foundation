@@ -22,9 +22,14 @@ import org.gradle.api.GradleException;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.Project;
 import org.gradle.api.plugins.ExtensionAware;
+import org.gradle.api.provider.ListProperty;
+import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.compile.JavaCompile;
+import org.gradle.process.CommandLineArgumentProvider;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -41,6 +46,72 @@ import java.util.Locale;
  * plugin. Nothing here is touched until {@code net.ltgt.errorprone} has been applied.
  */
 final class ErrorProneConfiguration {
+    /**
+     * Passes the exemption lists to the check as {@code -XepOpt} flags, leaving out a list the build
+     * left empty so that the command line says what the build said. Reading the lists when the
+     * arguments are requested rather than when the task is configured is what lets a consumer's
+     * {@code concordance} block, which is evaluated after this plugin is applied, take effect.
+     */
+    private static final class ExemptionFlags implements CommandLineArgumentProvider {
+        /** The lifecycle annotation names the build configured. */
+        private final ListProperty<String> lifecycleAnnotations;
+
+        /** The scaffolding field type names the build configured. */
+        private final ListProperty<String> scaffoldingFieldTypes;
+
+        /**
+         * Creates a provider over the extension's two lists.
+         *
+         * @param lifecycleAnnotations the lifecycle annotation names
+         * @param scaffoldingFieldTypes the scaffolding field type names
+         */
+        ExemptionFlags(ListProperty<String> lifecycleAnnotations, ListProperty<String> scaffoldingFieldTypes) {
+            this.lifecycleAnnotations = lifecycleAnnotations;
+            this.scaffoldingFieldTypes = scaffoldingFieldTypes;
+        }
+
+        /**
+         * Appends {@code -XepOpt:name=a,b} to {@code arguments} unless {@code names} is empty.
+         *
+         * @param arguments the arguments collected so far
+         * @param name the check flag
+         * @param names the configured names
+         */
+        private static void addFlag(List<String> arguments, String name, List<String> names) {
+            if (!names.isEmpty()) {
+                arguments.add("-XepOpt:" + name + "=" + String.join(",", names));
+            }
+        }
+
+        @Override
+        public Iterable<String> asArguments() {
+            List<String> arguments = new ArrayList<>();
+            addFlag(arguments, LIFECYCLE_ANNOTATIONS, getLifecycleAnnotations().get());
+            addFlag(arguments, SCAFFOLDING_FIELD_TYPES, getScaffoldingFieldTypes().get());
+            return arguments;
+        }
+
+        /**
+         * Returns the lifecycle annotation names as a tracked task input.
+         *
+         * @return the configured names
+         */
+        @Input
+        ListProperty<String> getLifecycleAnnotations() {
+            return lifecycleAnnotations;
+        }
+
+        /**
+         * Returns the scaffolding field type names as a tracked task input.
+         *
+         * @return the configured names
+         */
+        @Input
+        ListProperty<String> getScaffoldingFieldTypes() {
+            return scaffoldingFieldTypes;
+        }
+    }
+
     /** The published module holding the check, which is resolved at this plugin's own version. */
     private static final String CHECK_COORDINATE = "org.coordinatekit.foundation:concordance-errorprone";
 
@@ -88,14 +159,8 @@ final class ErrorProneConfiguration {
             ErrorProneOptions options = ((ExtensionAware) task.getOptions()).getExtensions()
                     .getByType(ErrorProneOptions.class);
             options.check(CHECK_NAME, extension.getSeverity().map(ErrorProneConfiguration::severity));
-            options.option(
-                    LIFECYCLE_ANNOTATIONS,
-                    extension.getLifecycleAnnotations().map(names -> String.join(",", names))
-            );
-            options.option(
-                    SCAFFOLDING_FIELD_TYPES,
-                    extension.getScaffoldingFieldTypes().map(names -> String.join(",", names))
-            );
+            options.getErrorproneArgumentProviders()
+                    .add(new ExemptionFlags(extension.getLifecycleAnnotations(), extension.getScaffoldingFieldTypes()));
         });
     }
 

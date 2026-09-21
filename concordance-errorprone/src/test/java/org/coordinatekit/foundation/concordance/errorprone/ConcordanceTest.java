@@ -176,6 +176,24 @@ class ConcordanceTest {
     }
 
     @Test
+    void matchClass__emptyLifecycleFlag() {
+        // ARRANGE + ACT + ASSERT //
+        helper("-XepOpt:Concordance:LifecycleAnnotations=")
+                .addSourceLines("Fixture.java", "class Fixture {", "    void a() {}", "", "    void b() {}", "}")
+                .expectNoDiagnostics()
+                .doTest();
+    }
+
+    @Test
+    void matchClass__emptyScaffoldingFlag() {
+        // ARRANGE + ACT + ASSERT //
+        helper("-XepOpt:Concordance:ScaffoldingFieldTypes=")
+                .addSourceLines("Fixture.java", "class Fixture {", "    int a;", "}")
+                .expectNoDiagnostics()
+                .doTest();
+    }
+
+    @Test
     void matchClass__enumWithBody() {
         // ARRANGE + ACT + ASSERT //
         helper().addSourceLines(
@@ -346,6 +364,24 @@ class ConcordanceTest {
                 "    }",
                 "}"
         ).doTest();
+    }
+
+    @Test
+    void matchClass__paddedScaffoldingFlag() {
+        // ARRANGE + ACT + ASSERT //
+        helper("-XepOpt:Concordance:ScaffoldingFieldTypes=fixture.Other, org.slf4j.Logger")
+                .addSourceLines(
+                        "Fixture.java",
+                        "import org.slf4j.Logger;",
+                        "",
+                        "class Fixture {",
+                        "    static final int ZEBRA = 1;",
+                        "",
+                        "    static final Logger log = null;",
+                        "}"
+                )
+                .expectNoDiagnostics()
+                .doTest();
     }
 
     @Test
