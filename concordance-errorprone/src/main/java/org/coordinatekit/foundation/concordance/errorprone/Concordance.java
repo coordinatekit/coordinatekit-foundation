@@ -188,6 +188,27 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
     }
 
     /**
+     * Returns what the check sees when it looks at one member of a class body, or {@code null} for a
+     * member it is blind to: an initializer block, a compiler-generated member, a member annotated
+     * {@code @IgnoreOrder}, a configured scaffolding field, or a configured lifecycle method.
+     *
+     * @param tree the member to classify
+     * @param state the visitor state
+     * @return the member's category and sort key, or {@code null} if it is invisible to the check
+     */
+    private @Nullable Member classify(Tree tree, VisitorState state) {
+        if (generated(tree, state)) {
+            return null;
+        }
+        return switch (tree.getKind()) {
+            case ANNOTATION_TYPE, CLASS, ENUM, INTERFACE, RECORD -> nestedType((ClassTree) tree);
+            case METHOD -> method((MethodTree) tree);
+            case VARIABLE -> variable((VariableTree) tree, state);
+            default -> null;
+        };
+    }
+
+    /**
      * Adds every {@code MemberCategory} constant named by an {@code @IntentionalOrder} annotation value
      * to {@code categories}. The value is an array in the general case and a bare constant when a type
      * exempts one category, so both shapes are unwrapped here.
@@ -211,6 +232,22 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
                 }
             }
         }
+    }
+
+    /**
+     * Builds the finding for a member that sits where it should not, naming both members so a reader
+     * knows what to move without opening the file.
+     *
+     * @param tree the member to report the finding against
+     * @param current the member that sits out of place
+     * @param previous the member it should have preceded
+     * @param relation the phrase joining the two, either {@code declared after} for a category out of
+     *        sequence or {@code out of order with} for a member out of order within its category
+     * @return the finding
+     */
+    private Description describe(Tree tree, Member current, Member previous, String relation) {
+        return buildDescription(tree).setMessage(current.description() + " " + relation + " " + previous.description())
+                .build();
     }
 
     /**
@@ -261,14 +298,19 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
     }
 
     /**
-     * Returns the sort key for a member named {@code name}: the name lower-cased, which is what makes
-     * the ordering case-insensitive.
+     * Returns whether {@code element} carries one of the configured lifecycle annotations, such as
+     * JUnit's {@code @BeforeEach}, whose position a reader is meant to choose.
      *
-     * @param name the member's declared name
-     * @return the key the member sorts by within its category
+     * @param element the method to test
+     * @return whether the method is lifecycle scaffolding
      */
-    private static String sortKey(CharSequence name) {
-        return name.toString().toLowerCase(Locale.ROOT);
+    private boolean lifecycle(Element element) {
+        for (String name : lifecycleAnnotations) {
+            if (annotation(element, name) != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
@@ -290,59 +332,6 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
             previous = current;
         }
         return Description.NO_MATCH;
-    }
-
-    /**
-     * Returns what the check sees when it looks at one member of a class body, or {@code null} for a
-     * member it is blind to: an initializer block, a compiler-generated member, a member annotated
-     * {@code @IgnoreOrder}, a configured scaffolding field, or a configured lifecycle method.
-     *
-     * @param tree the member to classify
-     * @param state the visitor state
-     * @return the member's category and sort key, or {@code null} if it is invisible to the check
-     */
-    private @Nullable Member classify(Tree tree, VisitorState state) {
-        if (generated(tree, state)) {
-            return null;
-        }
-        return switch (tree.getKind()) {
-            case ANNOTATION_TYPE, CLASS, ENUM, INTERFACE, RECORD -> nestedType((ClassTree) tree);
-            case METHOD -> method((MethodTree) tree);
-            case VARIABLE -> variable((VariableTree) tree, state);
-            default -> null;
-        };
-    }
-
-    /**
-     * Builds the finding for a member that sits where it should not, naming both members so a reader
-     * knows what to move without opening the file.
-     *
-     * @param tree the member to report the finding against
-     * @param current the member that sits out of place
-     * @param previous the member it should have preceded
-     * @param relation the phrase joining the two, either {@code declared after} for a category out of
-     *        sequence or {@code out of order with} for a member out of order within its category
-     * @return the finding
-     */
-    private Description describe(Tree tree, Member current, Member previous, String relation) {
-        return buildDescription(tree).setMessage(current.description() + " " + relation + " " + previous.description())
-                .build();
-    }
-
-    /**
-     * Returns whether {@code element} carries one of the configured lifecycle annotations, such as
-     * JUnit's {@code @BeforeEach}, whose position a reader is meant to choose.
-     *
-     * @param element the method to test
-     * @return whether the method is lifecycle scaffolding
-     */
-    private boolean lifecycle(Element element) {
-        for (String name : lifecycleAnnotations) {
-            if (annotation(element, name) != null) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
@@ -424,6 +413,17 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
             }
         }
         return false;
+    }
+
+    /**
+     * Returns the sort key for a member named {@code name}: the name lower-cased, which is what makes
+     * the ordering case-insensitive.
+     *
+     * @param name the member's declared name
+     * @return the key the member sorts by within its category
+     */
+    private static String sortKey(CharSequence name) {
+        return name.toString().toLowerCase(Locale.ROOT);
     }
 
     /**

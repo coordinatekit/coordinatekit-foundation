@@ -77,25 +77,6 @@ class ConcordanceTest {
     }
 
     /**
-     * Returns a test helper for the check under test.
-     *
-     * @return the helper, with no flags set
-     */
-    private static CompilationTestHelper helper() {
-        return CompilationTestHelper.newInstance(Concordance.class, ConcordanceTest.class);
-    }
-
-    /**
-     * Returns a test helper for the check under test, configured with the given Error Prone flags.
-     *
-     * @param args the {@code -XepOpt} flags to compile the fixture with
-     * @return the configured helper
-     */
-    private static CompilationTestHelper helper(String... args) {
-        return helper().setArgs(Arrays.asList(args));
-    }
-
-    /**
      * Wraps fixture members in a class body, marking the second member as the one a finding is expected
      * on.
      *
@@ -113,6 +94,25 @@ class ConcordanceTest {
         lines.add("    " + second);
         lines.add("}");
         return lines.toArray(String[]::new);
+    }
+
+    /**
+     * Returns a test helper for the check under test.
+     *
+     * @return the helper, with no flags set
+     */
+    private static CompilationTestHelper helper() {
+        return CompilationTestHelper.newInstance(Concordance.class, ConcordanceTest.class);
+    }
+
+    /**
+     * Returns a test helper for the check under test, configured with the given Error Prone flags.
+     *
+     * @param args the {@code -XepOpt} flags to compile the fixture with
+     * @return the configured helper
+     */
+    private static CompilationTestHelper helper(String... args) {
+        return helper().setArgs(Arrays.asList(args));
     }
 
     static Stream<SequenceParameters> matchClass__categorySequence() {
