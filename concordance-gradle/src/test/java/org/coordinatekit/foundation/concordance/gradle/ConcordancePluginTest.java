@@ -1,0 +1,233 @@
+/*
+ * Copyright 2025-present Andy Marek
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.coordinatekit.foundation.concordance.gradle;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.gradle.api.Project;
+import org.gradle.api.internal.project.ProjectInternal;
+import org.gradle.testfixtures.ProjectBuilder;
+import org.gradle.testkit.runner.BuildResult;
+import org.gradle.testkit.runner.GradleRunner;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.Properties;
+import java.util.stream.Collectors;
+
+/**
+ * Unit and functional tests for {@link ConcordancePlugin}. The two defaults that matter, the
+ * severity and the empty exemption lists, are read straight off the extension through
+ * {@link ProjectBuilder}, as is the failure a build gets for forgetting
+ * {@code net.ltgt.errorprone}. Everything the plugin can only be shown to do by running a
+ * compilation, resolving the check jar and turning the extension into {@code -Xep} flags, is
+ * covered by one TestKit build in {@link #apply__failsCompilationOnMisorderedMembers}.
+ *
+ * <p>
+ * That fixture build resolves the check from the {@code concordance-errorprone} module's own
+ * {@code build/libs}, not from Maven Central, so it tests the check as it is in the working tree
+ * rather than as it was last released. The directory and the Error Prone versions to pin arrive as
+ * system properties the test task sets.
+ */
+class ConcordancePluginTest {
+    /** The id the plugin is applied under. */
+    private static final String PLUGIN_ID = "org.coordinatekit.foundation.concordance";
+
+    @Test
+    void apply__defaultsExemptNothingAtError() {
+        // ARRANGE //
+        Project project = ProjectBuilder.builder().build();
+
+        // ACT //
+        project.getPluginManager().apply(PLUGIN_ID);
+        ConcordanceExtension extension = project.getExtensions().getByType(ConcordanceExtension.class);
+
+        // ASSERT //
+        assertEquals("ERROR", extension.getSeverity().get());
+        assertEquals(List.of(), extension.getLifecycleAnnotations().get());
+        assertEquals(List.of(), extension.getScaffoldingFieldTypes().get());
+    }
+
+    @Test
+    void apply__failsCompilationOnMisorderedMembers(@TempDir Path directory) throws IOException {
+        // ARRANGE //
+        writeFixture(directory);
+
+        // ACT //
+        BuildResult result = GradleRunner.create()
+                .withProjectDir(directory.toFile())
+                .withArguments("compileJava")
+                .buildAndFail();
+
+        // ASSERT //
+        String output = result.getOutput();
+        assertTrue(
+                output.contains("error: [Concordance] method alpha() out of order with method zeta()"),
+                "expected a Concordance error naming both methods, got:\n" + output
+        );
+        assertFalse(
+                output.contains("scaffold"),
+                "the configured scaffolding field type should be invisible to the check, got:\n" + output
+        );
+    }
+
+    @Test
+    void apply__failsWithoutErrorPronePlugin() {
+        // ARRANGE //
+        Project project = ProjectBuilder.builder().build();
+        project.getPluginManager().apply(PLUGIN_ID);
+
+        // ACT //
+        Exception thrown = assertThrows(Exception.class, () -> ((ProjectInternal) project).evaluate());
+
+        // ASSERT //
+        assertTrue(
+                causes(thrown).contains("net.ltgt.errorprone"),
+                "expected the failure to name the missing plugin, got: " + causes(thrown)
+        );
+    }
+
+    /**
+     * Flattens an exception and everything that caused it into one string. Gradle wraps a failure
+     * thrown from {@code afterEvaluate} in a configuration exception, so the message under test is
+     * never the one on top.
+     *
+     * @param thrown the exception to flatten
+     * @return every message in the cause chain, newline-separated
+     */
+    private static String causes(Throwable thrown) {
+        StringBuilder messages = new StringBuilder();
+        for (Throwable cause = thrown; cause != null; cause = cause.getCause()) {
+            messages.append(cause.getMessage()).append('\n');
+        }
+        return messages.toString();
+    }
+
+    /**
+     * Returns the plugin under test as a Groovy list literal of file paths, read from the metadata file
+     * {@code java-gradle-plugin} generates onto the test classpath.
+     *
+     * <p>
+     * The fixture puts it on its own {@code buildscript} classpath rather than taking it from
+     * {@code GradleRunner.withPluginClasspath()}, because that injects the plugin into a classloader of
+     * its own, where it cannot see the Error Prone plugin's types. A consumer's {@code plugins} block
+     * puts both in one scope, and this is the shape of that.
+     *
+     * @return a Groovy list literal naming every entry of the plugin's runtime classpath
+     * @throws IOException if the metadata file cannot be read
+     */
+    private static String pluginClasspath() throws IOException {
+        Properties metadata = new Properties();
+        try (InputStream entries = ConcordancePluginTest.class.getClassLoader()
+                .getResourceAsStream("plugin-under-test-metadata.properties")) {
+            metadata.load(
+                    Objects.requireNonNull(
+                            entries,
+                            "plugin-under-test-metadata.properties is not on the "
+                                    + "test classpath; the pluginUnderTestMetadata task should have put it there"
+                    )
+            );
+        }
+        return Arrays.stream(metadata.getProperty("implementation-classpath").split(File.pathSeparator))
+                .map(entry -> "\"" + entry + "\"")
+                .collect(Collectors.joining(", ", "[", "]"));
+    }
+
+    /**
+     * Writes a consumer build that applies both plugins and compiles one misordered class. The class
+     * also carries a field of a type the build lists as scaffolding, declared where the check would
+     * otherwise report it, so one compilation covers both the severity and the option plumbing.
+     *
+     * @param directory the project directory to write into
+     * @throws IOException if the fixture cannot be written
+     */
+    private static void writeFixture(Path directory) throws IOException {
+        Path sources = directory.resolve("src/main/java/fixture");
+        Files.createDirectories(sources);
+
+        Files.writeString(directory.resolve("settings.gradle"), "rootProject.name = \"fixture\"\n");
+        Files.writeString(
+                directory.resolve("build.gradle"),
+                """
+                        buildscript {
+                            repositories {
+                                gradlePluginPortal()
+                            }
+                            dependencies {
+                                classpath "net.ltgt.gradle:gradle-errorprone-plugin:%s"
+                                classpath files(%s)
+                            }
+                        }
+
+                        apply plugin: "java"
+                        apply plugin: "net.ltgt.errorprone"
+                        apply plugin: "org.coordinatekit.foundation.concordance"
+
+                        repositories {
+                            mavenCentral()
+                            flatDir { dirs "%s" }
+                        }
+
+                        dependencies {
+                            errorprone "com.google.errorprone:error_prone_core:%s"
+                        }
+
+                        concordance {
+                            scaffoldingFieldTypes = ["fixture.Scaffold"]
+                        }
+
+                        tasks.withType(JavaCompile).configureEach {
+                            options.compilerArgs += "-XDaddTypeAnnotationsToSymbol=true"
+                        }
+                        """.formatted(
+                        System.getProperty("concordance.errorPronePluginVersion"),
+                        pluginClasspath(),
+                        System.getProperty("concordance.checkJarDirectory"),
+                        System.getProperty("concordance.errorProneVersion")
+                )
+        );
+
+        Files.writeString(sources.resolve("Scaffold.java"), """
+                package fixture;
+
+                public class Scaffold {}
+                """);
+        Files.writeString(sources.resolve("Fixture.java"), """
+                package fixture;
+
+                public class Fixture {
+                    static final int ZEBRA = 1;
+
+                    static final Scaffold scaffold = null;
+
+                    void zeta() {}
+
+                    void alpha() {}
+                }
+                """);
+    }
+}

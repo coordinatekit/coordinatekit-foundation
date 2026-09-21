@@ -108,18 +108,24 @@ SED_ARGS=(
   -e "s|<version>$ESCAPED_CURRENT</version>|<version>$NEW_VERSION</version>|g"
 )
 
-# Published coordinates and jar filenames (README) name the last release, so they are matched by
-# "any version" rather than CURRENT_VERSION and are only rewritten when bumping to a release. The
-# `/-SNAPSHOT/!` address keeps them off lines that document a snapshot coordinate, which would
-# otherwise be swallowed by the version pattern and turned into a release coordinate. The jar rule
-# is anchored to this project's own module names so it never touches a dependency jar that a doc
-# happens to name. The `(^|[^A-Za-z0-9._-])` left-hand guard keeps a forked or foreign name (e.g.
-# `my-conventions-1.2.3.jar`, `notmy.org.coordinatekit.foundation:x:1.0`) from being caught by the
-# alternation matching only a suffix of it.
+# Published coordinates, jar filenames, and plugin ids (README) name the last release, so they are
+# matched by "any version" rather than CURRENT_VERSION and are only rewritten when bumping to a
+# release. The `/-SNAPSHOT/!` address keeps them off lines that document a snapshot coordinate,
+# which would otherwise be swallowed by the version pattern and turned into a release coordinate.
+# The jar rule is anchored to this project's own module names so it never touches a dependency jar
+# that a doc happens to name. The `(^|[^A-Za-z0-9._-])` left-hand guard keeps a forked or foreign
+# name (e.g. `my-conventions-1.2.3.jar`, `notmy.org.coordinatekit.foundation:x:1.0`) from being
+# caught by the alternation matching only a suffix of it.
+#
+# A Gradle plugin is declared in a `plugins` block by id and version rather than as a coordinate, so
+# it needs a rule of its own. It is anchored to this project's own group and requires every further
+# segment of the id to follow a literal dot, which keeps a foreign id that merely starts with the
+# same letters out of the match.
 if [[ "$NEW_VERSION" != *-SNAPSHOT ]]; then
   SED_ARGS+=(
     -e "/-SNAPSHOT/!s/(^|[^A-Za-z0-9._-])($ESCAPED_GROUP:[A-Za-z0-9._-]+:)[0-9][A-Za-z0-9.+-]*/\1\2$NEW_VERSION/g"
     -e "/-SNAPSHOT/!s/(^|[^A-Za-z0-9._-])($ESCAPED_MODULES)-[0-9][A-Za-z0-9.+-]*\.jar/\1\2-$NEW_VERSION.jar/g"
+    -e "/-SNAPSHOT/!s/(id \"$ESCAPED_GROUP(\.[A-Za-z0-9_-]+)*\" version \")[0-9][A-Za-z0-9.+-]*\"/\1$NEW_VERSION\"/g"
   )
 else
   # Snapshot coordinates (RELEASE.md) name the in-development version, so they are rewritten on the
