@@ -18,4 +18,5 @@ dependencies {
     compileOnly libs.errorprone.gradle.plugin
 
     testImplementation gradleTestKit()
+    testImplementation libs.errorprone.gradle.plugin
 }

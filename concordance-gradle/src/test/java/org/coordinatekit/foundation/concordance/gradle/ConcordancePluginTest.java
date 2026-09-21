@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import net.ltgt.gradle.errorprone.CheckSeverity;
+import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.Project;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.testfixtures.ProjectBuilder;
@@ -27,6 +29,8 @@ import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.File;
 import java.io.IOException;
@@ -38,6 +42,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Unit and functional tests for {@link ConcordancePlugin}. The two defaults that matter, the
@@ -54,6 +59,15 @@ import java.util.stream.Collectors;
  * system properties the test task sets.
  */
 class ConcordancePluginTest {
+    /**
+     * One severity string and the severity it should parse to.
+     *
+     * @param name what the case shows
+     * @param value the configured string
+     * @param expected the severity it maps to
+     */
+    private record SeverityParameters(String name, String value, CheckSeverity expected) {}
+
     /** The id the plugin is applied under. */
     private static final String PLUGIN_ID = "org.coordinatekit.foundation.concordance";
 
@@ -90,8 +104,13 @@ class ConcordancePluginTest {
                 "expected a Concordance error naming both methods, got:\n" + output
         );
         assertFalse(
-                output.contains("scaffold"),
+                output.contains("constant scaffold"),
                 "the configured scaffolding field type should be invisible to the check, got:\n" + output
+        );
+        assertFalse(
+                output.contains("method aardvark()"),
+                "a method carrying the configured lifecycle annotation should be invisible to the check, got:\n"
+                        + output
         );
     }
 
@@ -157,6 +176,37 @@ class ConcordancePluginTest {
                 .collect(Collectors.joining(", ", "[", "]"));
     }
 
+    static Stream<SeverityParameters> severity__accepted() {
+        return Stream.of(
+                new SeverityParameters("upper case", "ERROR", CheckSeverity.ERROR),
+                new SeverityParameters("lower case", "warn", CheckSeverity.WARN),
+                new SeverityParameters("mixed case", "Off", CheckSeverity.OFF)
+        );
+    }
+
+    @MethodSource
+    @ParameterizedTest
+    void severity__accepted(SeverityParameters parameters) {
+        // ACT //
+        CheckSeverity severity = ErrorProneConfiguration.severity(parameters.value());
+
+        // ASSERT //
+        assertEquals(parameters.expected(), severity, parameters.name());
+    }
+
+    @Test
+    void severity__rejectsUnknownName() {
+        // ACT //
+        InvalidUserDataException thrown = assertThrows(
+                InvalidUserDataException.class,
+                () -> ErrorProneConfiguration.severity("loud")
+        );
+
+        // ASSERT //
+        assertTrue(thrown.getMessage().contains("concordance.severity must be one of"), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains("got: loud"), thrown.getMessage());
+    }
+
     /**
      * Writes a consumer build that applies both plugins and compiles one misordered class. The class
      * also carries a field of a type the build lists as scaffolding, declared where the check would
@@ -197,6 +247,7 @@ class ConcordancePluginTest {
                         }
 
                         concordance {
+                            lifecycleAnnotations = ["fixture.Lifecycle"]
                             scaffoldingFieldTypes = ["fixture.Scaffold"]
                         }
 
@@ -211,6 +262,11 @@ class ConcordancePluginTest {
                 )
         );
 
+        Files.writeString(sources.resolve("Lifecycle.java"), """
+                package fixture;
+
+                public @interface Lifecycle {}
+                """);
         Files.writeString(sources.resolve("Scaffold.java"), """
                 package fixture;
 
@@ -227,6 +283,9 @@ class ConcordancePluginTest {
                     void zeta() {}
 
                     void alpha() {}
+
+                    @Lifecycle
+                    void aardvark() {}
                 }
                 """);
     }

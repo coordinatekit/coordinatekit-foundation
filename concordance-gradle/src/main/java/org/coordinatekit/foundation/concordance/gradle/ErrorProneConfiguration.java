@@ -172,7 +172,7 @@ final class ErrorProneConfiguration {
      * @return the matching severity
      * @throws InvalidUserDataException if {@code name} is not one of Error Prone's severities
      */
-    private static CheckSeverity severity(String name) {
+    static CheckSeverity severity(String name) {
         try {
             return CheckSeverity.valueOf(name.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException cause) {
