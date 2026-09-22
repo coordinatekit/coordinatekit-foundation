@@ -7,4 +7,5 @@ dependencies {
     testImplementation libs.errorprone.check.api
     testImplementation libs.errorprone.core.target
     testImplementation libs.errorprone.test.helpers
+    testImplementation libs.slf4j.api
 }

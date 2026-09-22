@@ -284,7 +284,6 @@ configure(codeProjects) {
         errorprone libs.errorprone.core
 
         api libs.jspecify
-        implementation libs.slf4j.api
 
         testImplementation(platform(libs.junit.bom))
         testImplementation(libs.junit.jupiter)
