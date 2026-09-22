@@ -41,7 +41,7 @@ pluginManagement {
 }
 ```
 
-The build then applies it beside `net.ltgt.errorprone`. The plugin reacts to that one rather than applying it, so the Error Prone version, the `error_prone_core` coordinate, and the compiler arguments all stay yours; a build that forgets the line fails with a message naming it. The check jar is resolved at the plugin's own version, so the two are always the same release.
+The build then applies it beside `net.ltgt.errorprone`. The plugin reacts to that one rather than applying it, so the Error Prone version, the `error_prone_core` coordinate, and the compiler arguments all stay yours; a build that forgets the line fails with a message naming it. The check jar is resolved at the plugin's own version, so the two are always the same release. The check is built against Error Prone 2.50.0; consuming a significantly older or newer release may cause binary incompatibilities.
 
 ```groovy
 plugins {
@@ -51,7 +51,8 @@ plugins {
 
 dependencies {
     errorprone "com.google.errorprone:error_prone_core:2.50.0"
-    implementation "org.coordinatekit.foundation:concordance:0.2.0"
+    compileOnly "org.coordinatekit.foundation:concordance:0.2.0"
+    testCompileOnly "org.coordinatekit.foundation:concordance:0.2.0"
 }
 
 concordance {

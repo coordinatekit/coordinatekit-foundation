@@ -33,6 +33,11 @@ import java.lang.annotation.Target;
  * duration of the compilation, which is long enough for the check to read it, and nothing survives
  * into the class file.
  *
+ * <p>
+ * When applied to a top-level type, this annotation has no effect: only nested types and their
+ * members can be exempted from the check. To suppress the check for a whole top-level type, use
+ * {@code @SuppressWarnings("Concordance")} instead.
+ *
  * @see IntentionalOrder
  */
 @Documented

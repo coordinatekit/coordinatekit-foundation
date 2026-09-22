@@ -62,7 +62,8 @@ import javax.lang.model.element.VariableElement;
  * before its predecessor within the same category is an ordering violation. Anything invisible to
  * the check, whether a compiler-generated member, an exempted one, or an initializer block, is
  * skipped without becoming the predecessor, so the members on either side of it compare with each
- * other.
+ * other. The check also applies to anonymous class bodies and enum constant bodies, which javac
+ * presents as class trees.
  *
  * <p>
  * Exemptions come from two places. The two annotations,

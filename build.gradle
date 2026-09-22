@@ -103,8 +103,8 @@ configure(pluginProjects) {
         dependsOn ":concordance-errorprone:jar"
         systemProperty "concordance.checkJarDirectory",
                 project(":concordance-errorprone").layout.buildDirectory.dir("libs").get().asFile.absolutePath
-        systemProperty "concordance.errorProneVersion", libs.versions.errorprone.asProvider().get()
-        systemProperty "concordance.errorPronePluginVersion", libs.versions.errorprone.plugin.get()
+        systemProperty "concordance.errorProneVersion", libs.versions.errorprone.target.get()
+        systemProperty "concordance.errorPronePluginVersion", libs.versions.errorprone.plugin.target.get()
     }
 }
 

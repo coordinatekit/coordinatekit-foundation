@@ -5,6 +5,6 @@ dependencies {
 
     testImplementation project(":concordance")
     testImplementation libs.errorprone.check.api
-    testImplementation libs.errorprone.core
+    testImplementation libs.errorprone.core.target
     testImplementation libs.errorprone.test.helpers
 }
