@@ -134,12 +134,6 @@ class ConcordanceTest {
     static Stream<SequenceParameters> matchClass__categorySequence() {
         return Stream.of(
                 new SequenceParameters(
-                        "nested_type_after_constant",
-                        "static final int A = 1;",
-                        "class B {}",
-                        "nested type B declared after constant A"
-                ),
-                new SequenceParameters(
                         "constant_after_field",
                         "int a;",
                         "static final int B = 1;",
@@ -380,6 +374,22 @@ class ConcordanceTest {
     }
 
     @Test
+    void matchClass__nestedTypesInvisible() {
+        // ARRANGE + ACT + ASSERT //
+        helper().addSourceLines(
+                "Fixture.java",
+                "class Fixture {",
+                "    void b() {}",
+                "",
+                "    record P() {}",
+                "",
+                "    // BUG: Diagnostic contains: method a() out of order with method b()",
+                "    void a() {}",
+                "}"
+        ).doTest();
+    }
+
+    @Test
     void matchClass__nestedTypeBodyChecked() {
         // ARRANGE + ACT + ASSERT //
         helper().addSourceLines(
@@ -504,12 +514,6 @@ class ConcordanceTest {
                         "int b;",
                         "int a;",
                         "field a out of order with field b"
-                ),
-                new WithinCategoryParameters(
-                        "nested_types_out_of_order",
-                        "class B {}",
-                        "class A {}",
-                        "nested type A out of order with nested type B"
                 )
         );
     }

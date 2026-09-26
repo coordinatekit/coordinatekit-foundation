@@ -31,7 +31,7 @@ class MemberCategoryTest {
     @Test
     void values__pinCategorySequence() {
         // ARRANGE //
-        List<String> expected = List.of("ENUM_CONSTANT", "TYPE", "CONSTANT", "FIELD", "CONSTRUCTOR", "METHOD");
+        List<String> expected = List.of("ENUM_CONSTANT", "CONSTANT", "FIELD", "CONSTRUCTOR", "METHOD");
 
         // ACT //
         List<String> declared = Arrays.stream(MemberCategory.values()).map(Enum::name).toList();

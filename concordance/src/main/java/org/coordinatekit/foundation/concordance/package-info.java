@@ -19,7 +19,7 @@
  * declared in category order, and alphabetically within each category.
  *
  * <p>
- * {@link org.coordinatekit.foundation.concordance.MemberCategory} names the six categories and, by
+ * {@link org.coordinatekit.foundation.concordance.MemberCategory} names the five categories and, by
  * its declaration order, fixes the sequence they appear in. The two annotations grant exemptions
  * and both require a reason: {@link org.coordinatekit.foundation.concordance.IntentionalOrder}
  * frees whole categories of one type's members, and

@@ -17,9 +17,13 @@ package org.coordinatekit.foundation.concordance;
 
 /**
  * The kinds a class member is sorted into, listed in the order the kinds must be declared. A type
- * declares its enum constants, then its nested types, then its constants, then its fields, then its
- * constructors, then its methods. Within a kind the order is alphabetical and case-insensitive,
- * except for {@link #CONSTRUCTOR}, which runs by ascending parameter count.
+ * declares its enum constants, then its constants, then its fields, then its constructors, then its
+ * methods. Within a kind the order is alphabetical and case-insensitive, except for
+ * {@link #CONSTRUCTOR}, which runs by ascending parameter count.
+ *
+ * <p>
+ * Nested types belong to no kind. They may sit anywhere in a type, and their own members are
+ * checked like those of any other type.
  *
  * <p>
  * The constants are deliberately not alphabetical, because declaration order is the rule itself:
@@ -40,9 +44,6 @@ public enum MemberCategory {
      * can name it in {@link IntentionalOrder#members()}.
      */
     ENUM_CONSTANT,
-
-    /** Nested classes, interfaces, enums, records, and annotation types. */
-    TYPE,
 
     /** Fields declared both {@code static} and {@code final}. */
     CONSTANT,

@@ -22,7 +22,7 @@ System.out.print(new Banner().render(ansiEnabled));
 
 ## Concordance
 
-Concordance is the member-order rule CoordinateKit's Java sources follow. A type declares its enum constants, then its nested types, then its constants, then its fields, then its constructors, then its methods, and each category is sorted alphabetically and case-insensitively inside itself. Constructors are the one exception, running by ascending parameter count. An Error Prone check enforces the rule and a Gradle plugin configures the check, so a consuming build writes no `-Xep` flags of its own.
+Concordance is the member-order rule CoordinateKit's Java sources follow. A type declares its enum constants, then its constants, then its fields, then its constructors, then its methods, and each category is sorted alphabetically and case-insensitively inside itself. Constructors are the one exception, running by ascending parameter count. Nested types can sit anywhere in a type, and their own members are checked like any other type's. An Error Prone check enforces the rule and a Gradle plugin configures the check, so a consuming build writes no `-Xep` flags of its own.
 
 | Module                                                | What it holds                                                                                 |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------- |

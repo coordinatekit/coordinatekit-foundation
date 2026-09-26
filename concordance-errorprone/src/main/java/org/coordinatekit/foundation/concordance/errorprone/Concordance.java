@@ -51,19 +51,19 @@ import javax.lang.model.element.VariableElement;
 
 /**
  * Reports class members declared out of the order CoordinateKit's Java sources follow: enum
- * constants, then nested types, then constants, then fields, then constructors, then methods, with
- * each category sorted alphabetically and case-insensitively inside itself, and constructors sorted
- * by ascending parameter count instead.
+ * constants, then constants, then fields, then constructors, then methods, with each category
+ * sorted alphabetically and case-insensitively inside itself, and constructors sorted by ascending
+ * parameter count instead.
  *
  * <p>
  * One walk over {@link ClassTree#getMembers()} does the whole check. Members arrive in source
  * order, so each one only has to be compared against the last member that was visible to the check:
  * a category that sorts before its predecessor's is a sequence violation, and a member that sorts
  * before its predecessor within the same category is an ordering violation. Anything invisible to
- * the check, whether a compiler-generated member, an exempted one, or an initializer block, is
- * skipped without becoming the predecessor, so the members on either side of it compare with each
- * other. The check also applies to anonymous class bodies and enum constant bodies, which javac
- * presents as class trees.
+ * the check, whether a compiler-generated member, an exempted one, a nested type, or an initializer
+ * block, is skipped without becoming the predecessor, so the members on either side of it compare
+ * with each other. The check also applies to anonymous class bodies and enum constant bodies, which
+ * javac presents as class trees.
  *
  * <p>
  * Exemptions come from two places. The two annotations,
@@ -95,9 +95,6 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
     enum Category {
         /** Enum constants, which Java already requires ahead of every other member. */
         ENUM_CONSTANT,
-
-        /** Nested classes, interfaces, enums, records, and annotation types. */
-        TYPE,
 
         /** Fields that are both static and final, including a field of an interface. */
         CONSTANT,
@@ -190,8 +187,8 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
 
     /**
      * Returns what the check sees when it looks at one member of a class body, or {@code null} for a
-     * member it is blind to: an initializer block, a compiler-generated member, a member annotated
-     * {@code @IgnoreOrder}, a configured scaffolding field, or a configured lifecycle method.
+     * member it is blind to: an initializer block, a nested type, a compiler-generated member, a member
+     * annotated {@code @IgnoreOrder}, a configured scaffolding field, or a configured lifecycle method.
      *
      * @param tree the member to classify
      * @param state the visitor state
@@ -202,7 +199,6 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
             return null;
         }
         return switch (tree.getKind()) {
-            case ANNOTATION_TYPE, CLASS, ENUM, INTERFACE, RECORD -> nestedType((ClassTree) tree);
             case METHOD -> method((MethodTree) tree);
             case VARIABLE -> variable((VariableTree) tree, state);
             default -> null;
@@ -365,21 +361,6 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
      */
     private static List<String> names(ErrorProneFlags flags, String key) {
         return flags.getListOrEmpty(key).stream().map(String::trim).filter(name -> !name.isEmpty()).toList();
-    }
-
-    /**
-     * Classifies a nested type declaration.
-     *
-     * @param tree the declaration to classify
-     * @return the member, or {@code null} if it is invisible to the check
-     */
-    private @Nullable Member nestedType(ClassTree tree) {
-        Symbol.ClassSymbol symbol = ASTHelpers.getSymbol(tree);
-        if (symbol == null || ignored(symbol)) {
-            return null;
-        }
-        CharSequence name = tree.getSimpleName();
-        return new Member(Category.TYPE, sortKey(name), 0, "nested type " + name);
     }
 
     /**

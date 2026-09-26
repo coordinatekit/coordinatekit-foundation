@@ -35,7 +35,7 @@ import java.lang.annotation.Target;
  * <p>
  * An enum whose constants run in the order its states are entered carries
  * {@code @IntentionalOrder(members = MemberCategory.ENUM_CONSTANT, reason = "states run in entry
- * order")} on the enum itself, and its nested types, fields, and methods stay checked as usual.
+ * order")} on the enum itself, and its fields and methods stay checked as usual.
  *
  * @see IgnoreOrder
  */
