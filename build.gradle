@@ -89,11 +89,70 @@ configure(pluginProjects) {
         gradlePluginPortal()
     }
 
+    // The functional test's fixture builds run in TestKit daemons, out of reach of the test JVM's
+    // JaCoCo agent, and an agent added to the daemon records nothing either: Gradle rewrites a build
+    // script's classpath jars and loads its rewritten copy, so the classes an agent instruments are
+    // not the ones that run. The fixture builds get a copy of the jar JaCoCo has instrumented
+    // offline instead. Gradle's rewrite keeps the probes, and each class carries the ID of its
+    // original, so the module's report matches the fixture data against its own classes.
+    //
+    // The runtime those probes call goes on the daemon's boot classpath rather than beside the
+    // plugin, because Gradle closes the build script's classloader before the daemon exits, and a
+    // runtime loaded there can no longer load the classes it writes its data with. writeFixture
+    // passes these arguments on through each fixture's gradle.properties.
+    configurations {
+        testKitJacocoRuntime {
+            canBeConsumed = false
+            transitive = false
+        }
+    }
+
+    // Read lazily: the jacoco plugin is applied further down, with the rest of codeProjects' wiring.
+    dependencies {
+        testKitJacocoRuntime providers.provider { "org.jacoco:org.jacoco.agent:${jacoco.toolVersion}:runtime" }
+    }
+
+    def fixtureExecutionData = layout.buildDirectory.file("jacoco/fixture.exec")
+    def testKitJarDirectory = layout.buildDirectory.dir("jacoco/testKit")
+    def instrumentTestKitJar = tasks.register("instrumentTestKitJar") {
+        def jar = tasks.named("jar", Jar).flatMap { it.archiveFile }
+        inputs.file(jar).withPropertyName("jar")
+        outputs.dir(testKitJarDirectory).withPropertyName("instrumentedJar")
+        doLast {
+            def destination = testKitJarDirectory.get().asFile
+            // A version bump renames the jar, and a stale one would stay on the plugin classpath.
+            project.delete(destination)
+            ant.taskdef(name: "jacocoInstrument", classname: "org.jacoco.ant.InstrumentTask",
+                    classpath: configurations.jacocoAnt.asPath)
+            ant.jacocoInstrument(destdir: destination) {
+                fileset(file: jar.get().asFile)
+            }
+        }
+    }
+
+    tasks.named("test", Test) {
+        def runtime = configurations.testKitJacocoRuntime
+        inputs.files(runtime).withPropertyName("testKitJacocoRuntime")
+        outputs.file(fixtureExecutionData).withPropertyName("fixtureExecutionData")
+        doFirst { delete(fixtureExecutionData) }
+        jvmArgumentProviders.add({
+            ["-Dconcordance.fixtureJvmArgs=-Xbootclasspath/a:${runtime.singleFile} -Djacoco-agent.destfile=${fixtureExecutionData.get().asFile}" as String]
+        } as CommandLineArgumentProvider)
+    }
+
+    tasks.withType(JacocoReport).configureEach {
+        executionData.from(fixtureExecutionData)
+    }
+
     // TestKit's withPluginClasspath() defaults to the plugin's class directories, and a directory
     // carries no jar manifest. The plugin reads its own version out of one, so the functional test
-    // gets the jar instead and exercises the same path a published plugin takes.
+    // gets the instrumented jar instead, whose manifest is the published jar's, and exercises the
+    // same path a published plugin takes.
     tasks.named("pluginUnderTestMetadata", org.gradle.plugin.devel.tasks.PluginUnderTestMetadata) {
-        pluginClasspath.setFrom(tasks.named("jar"), configurations.runtimeClasspath)
+        def instrumentedJar = files(testKitJarDirectory.map { it.asFileTree.matching { include "*.jar" } }) {
+            builtBy instrumentTestKitJar
+        }
+        pluginClasspath.setFrom(instrumentedJar, configurations.runtimeClasspath)
     }
 
     // The functional test's fixture build resolves the check from a flatDir repository rather than

@@ -35,6 +35,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -252,6 +253,12 @@ class ConcordancePluginTest {
      * The build lists {@code fixture.Scaffold} as a scaffolding field type only when the
      * {@code scaffold} Gradle property is set, so a test chooses the exemption per invocation.
      *
+     * <p>
+     * When the test task sets {@code concordance.fixtureJvmArgs}, the fixture also gets a
+     * {@code gradle.properties} passing it to the daemon as {@code org.gradle.jvmargs}. That is how the
+     * build records coverage from the fixture builds; without it, as under an IDE's own test runner,
+     * the fixture runs the same and records nothing.
+     *
      * @param directory the project directory to write into
      * @param fixtureSource the source of {@code fixture.Fixture}
      * @throws IOException if the fixture cannot be written
@@ -261,6 +268,14 @@ class ConcordancePluginTest {
         Files.createDirectories(sources);
 
         Files.writeString(directory.resolve("settings.gradle"), "rootProject.name = \"fixture\"\n");
+        String jvmArgs = System.getProperty("concordance.fixtureJvmArgs");
+        if (jvmArgs != null) {
+            Properties properties = new Properties();
+            properties.setProperty("org.gradle.jvmargs", jvmArgs);
+            try (OutputStream file = Files.newOutputStream(directory.resolve("gradle.properties"))) {
+                properties.store(file, null);
+            }
+        }
         Files.writeString(
                 directory.resolve("build.gradle"),
                 """
