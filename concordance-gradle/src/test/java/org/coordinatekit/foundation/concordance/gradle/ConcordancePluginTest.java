@@ -89,12 +89,27 @@ class ConcordancePluginTest {
     @Test
     void apply__failsCompilationOnMisorderedMembers(@TempDir Path directory) throws IOException {
         // ARRANGE //
-        writeFixture(directory);
+        writeFixture(directory, """
+                package fixture;
+
+                public class Fixture {
+                    static final int ZEBRA = 1;
+
+                    static final Scaffold scaffold = null;
+
+                    void zeta() {}
+
+                    void alpha() {}
+
+                    @Lifecycle
+                    void aardvark() {}
+                }
+                """);
 
         // ACT //
         BuildResult result = GradleRunner.create()
                 .withProjectDir(directory.toFile())
-                .withArguments("compileJava")
+                .withArguments("compileJava", "-Pscaffold=fixture.Scaffold")
                 .buildAndFail();
 
         // ASSERT //
@@ -127,6 +142,31 @@ class ConcordancePluginTest {
         assertTrue(
                 causes(thrown).contains("net.ltgt.errorprone"),
                 "expected the failure to name the missing plugin, got: " + causes(thrown)
+        );
+    }
+
+    @Test
+    void apply__rerunsCompilationWhenExemptionChanges(@TempDir Path directory) throws IOException {
+        // ARRANGE //
+        writeFixture(directory, """
+                package fixture;
+
+                public class Fixture {
+                    static final int ZEBRA = 1;
+
+                    static final Scaffold scaffold = null;
+                }
+                """);
+        GradleRunner runner = GradleRunner.create().withProjectDir(directory.toFile());
+
+        // ACT //
+        runner.withArguments("compileJava", "--configuration-cache", "-Pscaffold=fixture.Scaffold").build();
+        BuildResult result = runner.withArguments("compileJava", "--configuration-cache").buildAndFail();
+
+        // ASSERT //
+        assertTrue(
+                result.getOutput().contains("constant scaffold"),
+                "dropping the exemption should recompile and report the field, got:\n" + result.getOutput()
         );
     }
 
@@ -208,14 +248,15 @@ class ConcordancePluginTest {
     }
 
     /**
-     * Writes a consumer build that applies both plugins and compiles one misordered class. The class
-     * also carries a field of a type the build lists as scaffolding, declared where the check would
-     * otherwise report it, so one compilation covers both the severity and the option plumbing.
+     * Writes a consumer build that applies both plugins and compiles the given {@code Fixture} class.
+     * The build lists {@code fixture.Scaffold} as a scaffolding field type only when the
+     * {@code scaffold} Gradle property is set, so a test chooses the exemption per invocation.
      *
      * @param directory the project directory to write into
+     * @param fixtureSource the source of {@code fixture.Fixture}
      * @throws IOException if the fixture cannot be written
      */
-    private static void writeFixture(Path directory) throws IOException {
+    private static void writeFixture(Path directory, String fixtureSource) throws IOException {
         Path sources = directory.resolve("src/main/java/fixture");
         Files.createDirectories(sources);
 
@@ -248,7 +289,7 @@ class ConcordancePluginTest {
 
                         concordance {
                             lifecycleAnnotations = ["fixture.Lifecycle"]
-                            scaffoldingFieldTypes = ["fixture.Scaffold"]
+                            scaffoldingFieldTypes = providers.gradleProperty("scaffold").map { [it] }.orElse([])
                         }
 
                         tasks.withType(JavaCompile).configureEach {
@@ -272,21 +313,6 @@ class ConcordancePluginTest {
 
                 public class Scaffold {}
                 """);
-        Files.writeString(sources.resolve("Fixture.java"), """
-                package fixture;
-
-                public class Fixture {
-                    static final int ZEBRA = 1;
-
-                    static final Scaffold scaffold = null;
-
-                    void zeta() {}
-
-                    void alpha() {}
-
-                    @Lifecycle
-                    void aardvark() {}
-                }
-                """);
+        Files.writeString(sources.resolve("Fixture.java"), fixtureSource);
     }
 }

@@ -115,13 +115,25 @@ final class ErrorProneConfiguration {
     /** The published module holding the check, which is resolved at this plugin's own version. */
     private static final String CHECK_COORDINATE = "org.coordinatekit.foundation:concordance-errorprone";
 
-    /** The check's name in diagnostics, {@code -Xep} flags, and {@code @SuppressWarnings}. */
+    /**
+     * The check's name in diagnostics, {@code -Xep} flags, and {@code @SuppressWarnings}. It restates
+     * the name in {@code Concordance} because this module cannot depend on the check, and
+     * {@code ConcordancePluginTest#apply__failsCompilationOnMisorderedMembers} fails if the two drift.
+     */
     private static final String CHECK_NAME = "Concordance";
 
-    /** The check flag carrying the lifecycle annotation names. */
+    /**
+     * The check flag carrying the lifecycle annotation names. It restates the flag in
+     * {@code Concordance} because this module cannot depend on the check, and
+     * {@code ConcordancePluginTest#apply__failsCompilationOnMisorderedMembers} fails if the two drift.
+     */
     private static final String LIFECYCLE_ANNOTATIONS = "Concordance:LifecycleAnnotations";
 
-    /** The check flag carrying the scaffolding field type names. */
+    /**
+     * The check flag carrying the scaffolding field type names. It restates the flag in
+     * {@code Concordance} because this module cannot depend on the check, and
+     * {@code ConcordancePluginTest#apply__failsCompilationOnMisorderedMembers} fails if the two drift.
+     */
     private static final String SCAFFOLDING_FIELD_TYPES = "Concordance:ScaffoldingFieldTypes";
 
     /** Not instantiated; everything here is static. */

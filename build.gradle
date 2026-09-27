@@ -98,9 +98,10 @@ configure(pluginProjects) {
 
     // The functional test's fixture build resolves the check from a flatDir repository rather than
     // from Maven Central, so it needs that module's jar built and needs to be told where it and the
-    // versions the fixture pins came from.
+    // versions the fixture pins came from. The jar is declared as an input, not just an ordering
+    // edge, so a change to the check re-runs the test instead of leaving it UP-TO-DATE.
     tasks.named("test", Test) {
-        dependsOn ":concordance-errorprone:jar"
+        inputs.files(project(":concordance-errorprone").tasks.named("jar")).withPropertyName("concordanceCheckJar")
         systemProperty "concordance.checkJarDirectory",
                 project(":concordance-errorprone").layout.buildDirectory.dir("libs").get().asFile.absolutePath
         systemProperty "concordance.errorProneVersion", libs.versions.errorprone.target.get()
