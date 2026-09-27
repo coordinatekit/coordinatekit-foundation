@@ -362,25 +362,34 @@ def javacExports = [
 // the check in this repository rather than by a published release of it. The wiring is the raw
 // -Xep flags rather than the concordance-gradle plugin, because that plugin resolves the check from
 // Maven Central at its own version, which is the last release and not the working tree.
-// concordance-errorprone itself is left out: a module cannot supply the check that compiles it.
+// concordance-errorprone's main sources are left out: nothing can supply the check that compiles it.
+// Its test sources are in, checked by the module's own main output, which exists by then.
+def concordanceFlags = { JavaCompile task ->
+    task.options.errorprone.check("Concordance", CheckSeverity.ERROR)
+    task.options.errorprone.option("Concordance:ScaffoldingFieldTypes", "org.slf4j.Logger")
+    task.options.errorprone.option("Concordance:LifecycleAnnotations", [
+            "org.junit.jupiter.api.AfterAll",
+            "org.junit.jupiter.api.AfterEach",
+            "org.junit.jupiter.api.BeforeAll",
+            "org.junit.jupiter.api.BeforeEach"
+    ].join(","))
+}
+
 configure(codeProjects.findAll { it.name != "concordance-errorprone" }) {
     dependencies {
         errorprone project(":concordance-errorprone")
     }
 
-    tasks.withType(JavaCompile).configureEach {
-        options.errorprone.check("Concordance", CheckSeverity.ERROR)
-        options.errorprone.option("Concordance:ScaffoldingFieldTypes", "org.slf4j.Logger")
-        options.errorprone.option("Concordance:LifecycleAnnotations", [
-                "org.junit.jupiter.api.AfterAll",
-                "org.junit.jupiter.api.AfterEach",
-                "org.junit.jupiter.api.BeforeAll",
-                "org.junit.jupiter.api.BeforeEach"
-        ].join(","))
-    }
+    tasks.withType(JavaCompile).configureEach(concordanceFlags)
 }
 
 project(":concordance-errorprone") {
+    dependencies {
+        testAnnotationProcessor sourceSets.main.output
+    }
+
+    tasks.named("compileTestJava", JavaCompile, concordanceFlags)
+
     tasks.withType(JavaCompile).configureEach {
         options.compilerArgs += javacExports.collect { "--add-exports=${it}" as String }
     }
