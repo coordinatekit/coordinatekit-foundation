@@ -253,13 +253,11 @@ subprojects {
         required = isPublishingToCentral
     }
 
-    // Every publication is signed, for the same reason every POM is validated. `java-gradle-plugin`
-    // creates its publications in its own `afterEvaluate`, and this block is registered after that
-    // one, so the container is complete by the time it runs.
-    afterEvaluate {
-        signing {
-            sign publishing.publications
-        }
+    // Every publication is signed, for the same reason every POM is validated. `configureEach` also
+    // covers publications registered later, such as the ones `java-gradle-plugin` creates in its own
+    // `afterEvaluate`, so nothing here depends on which callback runs first.
+    publishing.publications.configureEach {
+        signing.sign(it)
     }
 
     tasks.withType(Sign).configureEach {
