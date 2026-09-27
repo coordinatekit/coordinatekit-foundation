@@ -299,6 +299,14 @@ case_release_bump_leaves_foreign_plugin_id_version() {
   assert_file_contains README.md 'id "org.other.gizmo" version "0.0.9"'
 }
 
+case_snapshot_bump_leaves_own_plugin_id_version() {
+  bump 0.2.0-SNAPSHOT
+  assert_status 0
+  assert_file_contains README.md 'id "com.example.widgets.gizmo" version "0.0.9"'
+  assert_unchanged README.md
+  assert_changed_files RELEASE.md gradle.properties
+}
+
 case_release_bump_leaves_foreign_jar_filename() {
   bump 0.1.0
   assert_status 0
@@ -535,6 +543,7 @@ release_bump_rewrites_own_jar_filename
 release_bump_leaves_foreign_jar_filename
 release_bump_rewrites_own_plugin_id_version
 release_bump_leaves_foreign_plugin_id_version
+snapshot_bump_leaves_own_plugin_id_version
 mixed_release_and_snapshot_line
 binary_files_untouched
 settings_gradle_include_forms
