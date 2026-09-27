@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-09-27
+
+### Features
+
+- add concordance member-order enforcement ([#24](https://github.com/coordinatekit/coordinatekit-foundation/pull/24))
+
+### Build
+
+- bump https://github.com/python-jsonschema/check-jsonschema ([#25](https://github.com/coordinatekit/coordinatekit-foundation/pull/25))
+- bump org.junit:junit-bom from 6.1.2 to 6.1.3 ([#16](https://github.com/coordinatekit/coordinatekit-foundation/pull/16))
+- bump com.diffplug.spotless from 8.9.0 to 8.10.0 ([#18](https://github.com/coordinatekit/coordinatekit-foundation/pull/18))
+- bump net.ltgt.errorprone from 5.1.0 to 5.1.1 ([#20](https://github.com/coordinatekit/coordinatekit-foundation/pull/20))
+- bump gradle-wrapper from 9.6.1 to 9.7.1 ([#19](https://github.com/coordinatekit/coordinatekit-foundation/pull/19))
+- bump org.jline:jline from 4.3.1 to 4.4.6 ([#21](https://github.com/coordinatekit/coordinatekit-foundation/pull/21))
+- bump actions/setup-java from 5.6.0 to 6.0.1 ([#23](https://github.com/coordinatekit/coordinatekit-foundation/pull/23))
+- enable Gradle caching ([7081b02bea1ff3a](https://github.com/coordinatekit/coordinatekit-foundation/commit/7081b02bea1ff3a593b2865680056914491cfb0a))
+- remove deprecated functionality ([8833a60430d644b](https://github.com/coordinatekit/coordinatekit-foundation/commit/8833a60430d644b093acf0b50efcadabe7a62a2d))
+- bump com.diffplug.spotless from 8.8.0 to 8.9.0 ([#13](https://github.com/coordinatekit/coordinatekit-foundation/pull/13))
+- bump org.junit:junit-bom from 6.0.3 to 6.1.2 ([#12](https://github.com/coordinatekit/coordinatekit-foundation/pull/12))
+- bump actions/setup-java from 5 to 5.6.0 ([#11](https://github.com/coordinatekit/coordinatekit-foundation/pull/11))
+
+[0.2.0]: https://github.com/coordinatekit/coordinatekit-foundation/releases/tag/v0.2.0
+
 ## [0.1.0] - 2026-07-31
 
 ### Features
