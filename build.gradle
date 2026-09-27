@@ -1,6 +1,8 @@
 import net.ltgt.gradle.errorprone.CheckSeverity
 import com.github.jknack.handlebars.Helper
 import groovy.xml.XmlSlurper
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import se.bjurr.gitchangelog.internal.semantic.ConventionalCommitParser
 import se.bjurr.gitchangelog.plugin.gradle.HelperParam
 
@@ -59,9 +61,10 @@ gitChangelog {
 }
 
 tasks.named('gitChangelog') {
+    def changelog = file("CHANGELOG.md")
+    def repoUrl = (findProperty('repoUrl') ?: '') as String
     doLast {
-        def changelog = file("CHANGELOG.md")
-        changelog.text = changelog.text.replace('__REPO_URL__', (findProperty('repoUrl') ?: '') as String)
+        changelog.text = changelog.text.replace('__REPO_URL__', repoUrl)
     }
 }
 
@@ -116,14 +119,15 @@ configure(pluginProjects) {
     def testKitJarDirectory = layout.buildDirectory.dir("jacoco/testKit")
     def instrumentTestKitJar = tasks.register("instrumentTestKitJar") {
         def jar = tasks.named("jar", Jar).flatMap { it.archiveFile }
+        def jacocoAnt = configurations.jacocoAnt
         inputs.file(jar).withPropertyName("jar")
         outputs.dir(testKitJarDirectory).withPropertyName("instrumentedJar")
         doLast {
             def destination = testKitJarDirectory.get().asFile
             // A version bump renames the jar, and a stale one would stay on the plugin classpath.
-            project.delete(destination)
+            destination.deleteDir()
             ant.taskdef(name: "jacocoInstrument", classname: "org.jacoco.ant.InstrumentTask",
-                    classpath: configurations.jacocoAnt.asPath)
+                    classpath: jacocoAnt.asPath)
             ant.jacocoInstrument(destdir: destination) {
                 fileset(file: jar.get().asFile)
             }
@@ -134,7 +138,7 @@ configure(pluginProjects) {
         def runtime = configurations.testKitJacocoRuntime
         inputs.files(runtime).withPropertyName("testKitJacocoRuntime")
         outputs.file(fixtureExecutionData).withPropertyName("fixtureExecutionData")
-        doFirst { delete(fixtureExecutionData) }
+        doFirst { fixtureExecutionData.get().asFile.delete() }
         jvmArgumentProviders.add({
             ["-Dconcordance.fixtureJvmArgs=-Xbootclasspath/a:${runtime.singleFile} -Djacoco-agent.destfile=${fixtureExecutionData.get().asFile}" as String]
         } as CommandLineArgumentProvider)
@@ -160,17 +164,23 @@ configure(pluginProjects) {
     // versions the fixture pins came from. The jar is declared as an input, not just an ordering
     // edge, so a change to the check re-runs the test instead of leaving it UP-TO-DATE.
     tasks.named("test", Test) {
-        inputs.files(project(":concordance-errorprone").tasks.named("jar")).withPropertyName("concordanceCheckJar")
+        inputs.files(project(":concordance-errorprone").tasks.named("jar", Jar).flatMap { it.archiveFile })
+                .withPropertyName("concordanceCheckJar")
         systemProperty "concordance.checkJarDirectory",
                 project(":concordance-errorprone").layout.buildDirectory.dir("libs").get().asFile.absolutePath
-        systemProperty "concordance.errorProneVersion", libs.versions.errorprone.target.get()
-        systemProperty "concordance.errorPronePluginVersion", libs.versions.errorprone.plugin.target.get()
+        systemProperty "concordance.errorProneVersion", rootProject.libs.versions.errorprone.target.get()
+        systemProperty "concordance.errorPronePluginVersion", rootProject.libs.versions.errorprone.plugin.target.get()
     }
 }
 
 // Signing is required only when a deployment is actually going to Central. `./gradlew build`,
-// `publishToMavenLocal`, and snapshot uploads all run without a key.
-def isPublishingToCentral = { gradle.taskGraph.allTasks.any { it.name == "nmcpPublishAggregationToCentralPortal" } }
+// `publishToMavenLocal`, and snapshot uploads all run without a key. The answer is settled once the
+// task graph is, and held in a property: the configuration cache stores it with the graph, whereas
+// asking the graph again from a signing task at execution time is not allowed.
+def isPublishingToCentral = objects.property(Boolean).convention(false)
+gradle.taskGraph.whenReady { graph ->
+    isPublishingToCentral.set(graph.allTasks.any { it.name == "nmcpPublishAggregationToCentralPortal" })
+}
 
 // One deployment, not one per module: nmcp collects every module's publication into a single
 // bundle and uploads it once, so Central validates and publishes every module as a unit. A module
@@ -309,7 +319,7 @@ subprojects {
         } else {
             useGpgCmd()
         }
-        required = isPublishingToCentral
+        required = { isPublishingToCentral.get() }
     }
 
     // Every publication is signed, for the same reason every POM is validated. `configureEach` also
@@ -320,7 +330,7 @@ subprojects {
     }
 
     tasks.withType(Sign).configureEach {
-        onlyIf isPublishingToCentral
+        onlyIf { isPublishingToCentral.get() }
     }
 
     spotless {
@@ -339,13 +349,13 @@ configure(codeProjects) {
     apply plugin: "net.ltgt.errorprone"
 
     dependencies {
-        errorprone libs.errorprone.core
+        errorprone rootProject.libs.errorprone.core
 
-        api libs.jspecify
+        api rootProject.libs.jspecify
 
-        testImplementation(platform(libs.junit.bom))
-        testImplementation(libs.junit.jupiter)
-        testRuntimeOnly(libs.junit.platform.launcher)
+        testImplementation(platform(rootProject.libs.junit.bom))
+        testImplementation(rootProject.libs.junit.jupiter)
+        testRuntimeOnly(rootProject.libs.junit.platform.launcher)
     }
 
     // Error Prone 2.48 refuses to run on JDK 21 without this javac option, and net.ltgt.errorprone
@@ -375,14 +385,14 @@ configure(codeProjects) {
             xml.required = true
             html.required = true
         }
+        // An input, so that editing the stylesheet re-runs the report rather than restoring one from
+        // the build cache that carries the old copy.
+        def customCss = rootProject.file('.infra/jacoco-report.css')
+        inputs.files(customCss).withPropertyName("customCss")
         doLast {
-            def customCss = rootProject.file('.infra/jacoco-report.css')
             if (customCss.exists()) {
-                copy {
-                    from customCss
-                    into reports.html.outputLocation.dir('jacoco-resources')
-                    rename { 'report.css' }
-                }
+                def reportCss = reports.html.outputLocation.file('jacoco-resources/report.css').get().asFile
+                Files.copy(customCss.toPath(), reportCss.toPath(), StandardCopyOption.REPLACE_EXISTING)
             }
         }
     }
