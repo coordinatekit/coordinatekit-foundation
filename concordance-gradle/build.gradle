@@ -1,0 +1,22 @@
+description = "Gradle plugin wiring the Concordance member-order check into a consumer's Error Prone setup."
+
+// The one block outside the description-and-dependencies rule the other modules keep to: a plugin
+// id and its implementation class are this module's identity rather than build wiring, and
+// java-gradle-plugin reads them from here to generate the descriptor and the marker publication.
+gradlePlugin {
+    plugins {
+        concordance {
+            id = "org.coordinatekit.foundation.concordance"
+            implementationClass = "org.coordinatekit.foundation.concordance.gradle.ConcordancePlugin"
+            displayName = "Concordance"
+            description = project.description
+        }
+    }
+}
+
+dependencies {
+    compileOnly libs.errorprone.gradle.plugin
+
+    testImplementation gradleTestKit()
+    testImplementation libs.errorprone.gradle.plugin
+}

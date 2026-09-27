@@ -1,0 +1,11 @@
+description = "Error Prone check enforcing the member-order rule CoordinateKit's Java sources follow."
+
+dependencies {
+    compileOnly libs.errorprone.check.api
+
+    testImplementation project(":concordance")
+    testImplementation libs.errorprone.check.api
+    testImplementation libs.errorprone.core.target
+    testImplementation libs.errorprone.test.helpers
+    testImplementation libs.slf4j.api
+}

@@ -2,6 +2,13 @@
 # api — update conservatively (security/bugs only)
 jspecify = "1.0.0"
 
+# provided — compileOnly, supplied by the consumer's build at run time. The published check and
+# plugin are binary-coupled to these, so update conservatively and move README's "built against"
+# line with them. The build section's unsuffixed versions of the same coordinates run this
+# repository's own linting, so a current Error Prone exercises the check built against the target.
+errorprone-target = "2.50.0"
+errorprone-plugin-target = "5.1.0"
+
 # implementation — keep current
 jline = "4.3.1"
 slf4j = "2.0.18"
@@ -17,7 +24,14 @@ nmcp = "1.6.1"
 spotless = "8.9.0"
 
 [libraries]
+errorprone-check-api = { module = "com.google.errorprone:error_prone_check_api", version.ref = "errorprone-target" }
+# error_prone_core appears twice on purpose: errorprone-core runs this repository's own linting,
+# errorprone-core-target runs ConcordanceTest against the version the check promises. They never
+# share a configuration.
 errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
+errorprone-core-target = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone-target" }
+errorprone-gradle-plugin = { module = "net.ltgt.gradle:gradle-errorprone-plugin", version.ref = "errorprone-plugin-target" }
+errorprone-test-helpers = { module = "com.google.errorprone:error_prone_test_helpers", version.ref = "errorprone-target" }
 jline = { module = "org.jline:jline", version.ref = "jline" }
 jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }

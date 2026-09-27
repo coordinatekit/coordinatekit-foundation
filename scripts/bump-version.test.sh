@@ -114,6 +114,12 @@ Jars:
     jline-3.30.5.jar
     gradle-wrapper.jar
 beta-0.0.9.jar
+
+Plugins:
+
+    id "com.example.widgets.gizmo" version "0.0.9"
+    id "com.example.widgetsmith.gizmo" version "0.0.9"
+    id "org.other.gizmo" version "0.0.9"
 EOF
 
   write_file RELEASE.md <<'EOF'
@@ -278,6 +284,27 @@ case_release_bump_rewrites_own_jar_filename() {
   assert_file_contains README.md "alpha-core-0.1.0.jar"
   assert_file_lacks README.md "alpha-core-0.0.9.jar"
   assert_file_matches README.md '^beta-0\.1\.0\.jar'
+}
+
+case_release_bump_rewrites_own_plugin_id_version() {
+  bump 1.2.3
+  assert_status 0
+  assert_file_contains README.md 'id "com.example.widgets.gizmo" version "1.2.3"'
+}
+
+case_release_bump_leaves_foreign_plugin_id_version() {
+  bump 1.2.3
+  assert_status 0
+  assert_file_contains README.md 'id "com.example.widgetsmith.gizmo" version "0.0.9"'
+  assert_file_contains README.md 'id "org.other.gizmo" version "0.0.9"'
+}
+
+case_snapshot_bump_leaves_own_plugin_id_version() {
+  bump 0.2.0-SNAPSHOT
+  assert_status 0
+  assert_file_contains README.md 'id "com.example.widgets.gizmo" version "0.0.9"'
+  assert_unchanged README.md
+  assert_changed_files RELEASE.md gradle.properties
 }
 
 case_release_bump_leaves_foreign_jar_filename() {
@@ -514,6 +541,9 @@ release_bump_leaves_snapshot_coordinates
 snapshot_bump_rewrites_snapshot_coordinates
 release_bump_rewrites_own_jar_filename
 release_bump_leaves_foreign_jar_filename
+release_bump_rewrites_own_plugin_id_version
+release_bump_leaves_foreign_plugin_id_version
+snapshot_bump_leaves_own_plugin_id_version
 mixed_release_and_snapshot_line
 binary_files_untouched
 settings_gradle_include_forms

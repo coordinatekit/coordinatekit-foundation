@@ -1,3 +1,4 @@
+import net.ltgt.gradle.errorprone.CheckSeverity
 import com.github.jknack.handlebars.Helper
 import groovy.xml.XmlSlurper
 import se.bjurr.gitchangelog.internal.semantic.ConventionalCommitParser
@@ -69,12 +70,110 @@ tasks.named('gitChangelog') {
 // only makes sense for a module with sources.
 def codeProjects = subprojects.findAll { it.name != "conventions" }
 
+// Modules that publish a Gradle plugin. `java-gradle-plugin` is applied from here, ahead of the
+// `subprojects` block, because the publishing wiring below branches on whether a module has it: the
+// plugin creates its own `pluginMaven` publication from `components.java`, so a module carrying it
+// must not also get the `centralPortal` publication every other module gets, or the same jar would
+// ship twice under one coordinate.
+def pluginProjects = [project(":concordance-gradle")]
+
+configure(pluginProjects) {
+    apply plugin: "java-gradle-plugin"
+
+    // net.ltgt.gradle:gradle-errorprone-plugin publishes to the Gradle Plugin Portal and not to
+    // Maven Central, so reaching its ErrorProneOptions type needs the portal as a repository. It is
+    // added here rather than to allprojects so that nothing else resolves through the portal's own
+    // mirror of Central, and it never reaches a consumer: the dependency is compileOnly, so it does
+    // not appear in the published POM.
+    repositories {
+        gradlePluginPortal()
+    }
+
+    // The functional test's fixture builds run in TestKit daemons, out of reach of the test JVM's
+    // JaCoCo agent, and an agent added to the daemon records nothing either: Gradle rewrites a build
+    // script's classpath jars and loads its rewritten copy, so the classes an agent instruments are
+    // not the ones that run. The fixture builds get a copy of the jar JaCoCo has instrumented
+    // offline instead. Gradle's rewrite keeps the probes, and each class carries the ID of its
+    // original, so the module's report matches the fixture data against its own classes.
+    //
+    // The runtime those probes call goes on the daemon's boot classpath rather than beside the
+    // plugin, because Gradle closes the build script's classloader before the daemon exits, and a
+    // runtime loaded there can no longer load the classes it writes its data with. writeFixture
+    // passes these arguments on through each fixture's gradle.properties.
+    configurations {
+        testKitJacocoRuntime {
+            canBeConsumed = false
+            transitive = false
+        }
+    }
+
+    // Read lazily: the jacoco plugin is applied further down, with the rest of codeProjects' wiring.
+    dependencies {
+        testKitJacocoRuntime providers.provider { "org.jacoco:org.jacoco.agent:${jacoco.toolVersion}:runtime" }
+    }
+
+    def fixtureExecutionData = layout.buildDirectory.file("jacoco/fixture.exec")
+    def testKitJarDirectory = layout.buildDirectory.dir("jacoco/testKit")
+    def instrumentTestKitJar = tasks.register("instrumentTestKitJar") {
+        def jar = tasks.named("jar", Jar).flatMap { it.archiveFile }
+        inputs.file(jar).withPropertyName("jar")
+        outputs.dir(testKitJarDirectory).withPropertyName("instrumentedJar")
+        doLast {
+            def destination = testKitJarDirectory.get().asFile
+            // A version bump renames the jar, and a stale one would stay on the plugin classpath.
+            project.delete(destination)
+            ant.taskdef(name: "jacocoInstrument", classname: "org.jacoco.ant.InstrumentTask",
+                    classpath: configurations.jacocoAnt.asPath)
+            ant.jacocoInstrument(destdir: destination) {
+                fileset(file: jar.get().asFile)
+            }
+        }
+    }
+
+    tasks.named("test", Test) {
+        def runtime = configurations.testKitJacocoRuntime
+        inputs.files(runtime).withPropertyName("testKitJacocoRuntime")
+        outputs.file(fixtureExecutionData).withPropertyName("fixtureExecutionData")
+        doFirst { delete(fixtureExecutionData) }
+        jvmArgumentProviders.add({
+            ["-Dconcordance.fixtureJvmArgs=-Xbootclasspath/a:${runtime.singleFile} -Djacoco-agent.destfile=${fixtureExecutionData.get().asFile}" as String]
+        } as CommandLineArgumentProvider)
+    }
+
+    tasks.withType(JacocoReport).configureEach {
+        executionData.from(fixtureExecutionData)
+    }
+
+    // TestKit's withPluginClasspath() defaults to the plugin's class directories, and a directory
+    // carries no jar manifest. The plugin reads its own version out of one, so the functional test
+    // gets the instrumented jar instead, whose manifest is the published jar's, and exercises the
+    // same path a published plugin takes.
+    tasks.named("pluginUnderTestMetadata", org.gradle.plugin.devel.tasks.PluginUnderTestMetadata) {
+        def instrumentedJar = files(testKitJarDirectory.map { it.asFileTree.matching { include "*.jar" } }) {
+            builtBy instrumentTestKitJar
+        }
+        pluginClasspath.setFrom(instrumentedJar, configurations.runtimeClasspath)
+    }
+
+    // The functional test's fixture build resolves the check from a flatDir repository rather than
+    // from Maven Central, so it needs that module's jar built and needs to be told where it and the
+    // versions the fixture pins came from. The jar is declared as an input, not just an ordering
+    // edge, so a change to the check re-runs the test instead of leaving it UP-TO-DATE.
+    tasks.named("test", Test) {
+        inputs.files(project(":concordance-errorprone").tasks.named("jar")).withPropertyName("concordanceCheckJar")
+        systemProperty "concordance.checkJarDirectory",
+                project(":concordance-errorprone").layout.buildDirectory.dir("libs").get().asFile.absolutePath
+        systemProperty "concordance.errorProneVersion", libs.versions.errorprone.target.get()
+        systemProperty "concordance.errorPronePluginVersion", libs.versions.errorprone.plugin.target.get()
+    }
+}
+
 // Signing is required only when a deployment is actually going to Central. `./gradlew build`,
 // `publishToMavenLocal`, and snapshot uploads all run without a key.
 def isPublishingToCentral = { gradle.taskGraph.allTasks.any { it.name == "nmcpPublishAggregationToCentralPortal" } }
 
 // One deployment, not one per module: nmcp collects every module's publication into a single
-// bundle and uploads it once, so Central validates and publishes both modules as a unit. A module
+// bundle and uploads it once, so Central validates and publishes every module as a unit. A module
 // added to settings.gradle has to be listed here too or it silently ships nothing.
 nmcpAggregation {
     centralPortal {
@@ -86,6 +185,9 @@ nmcpAggregation {
 
 dependencies {
     nmcpAggregation project(":cli-brand")
+    nmcpAggregation project(":concordance")
+    nmcpAggregation project(":concordance-errorprone")
+    nmcpAggregation project(":concordance-gradle")
     nmcpAggregation project(":conventions")
 }
 
@@ -107,34 +209,43 @@ subprojects {
 
     publishing {
         publications {
-            centralPortal(MavenPublication) {
-                from components.java
+            // A plugin module already has a publication of `components.java`, created for it by
+            // `java-gradle-plugin`, so registering a second one here would publish its jar twice.
+            if (!pluginProjects.contains(project)) {
+                centralPortal(MavenPublication) {
+                    from components.java
+                }
+            }
+        }
 
-                pom {
-                    name = "CoordinateKit Foundation ${project.name}"
-                    description = moduleDescription
+        // Applied to every publication rather than to `centralPortal` by name, so that a plugin
+        // module's `pluginMaven` publication and its marker both carry it. Central validates the
+        // marker POM by the same rules as any other.
+        publications.withType(MavenPublication).configureEach {
+            pom {
+                name = "CoordinateKit Foundation ${project.name}"
+                description = moduleDescription
+                url = findProperty("repoUrl")
+
+                licenses {
+                    license {
+                        name = "The Apache License, Version 2.0"
+                        url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = "andymarek"
+                        name = "Andy Marek"
+                        email = "andy@andymarek.com"
+                    }
+                }
+
+                scm {
+                    connection = "scm:git:git://github.com/coordinatekit/coordinatekit-foundation.git"
+                    developerConnection = "scm:git:ssh://github.com/coordinatekit/coordinatekit-foundation.git"
                     url = findProperty("repoUrl")
-
-                    licenses {
-                        license {
-                            name = "The Apache License, Version 2.0"
-                            url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
-                        }
-                    }
-
-                    developers {
-                        developer {
-                            id = "andymarek"
-                            name = "Andy Marek"
-                            email = "andy@andymarek.com"
-                        }
-                    }
-
-                    scm {
-                        connection = "scm:git:git://github.com/coordinatekit/coordinatekit-foundation.git"
-                        developerConnection = "scm:git:ssh://github.com/coordinatekit/coordinatekit-foundation.git"
-                        url = findProperty("repoUrl")
-                    }
                 }
             }
         }
@@ -144,39 +255,44 @@ subprojects {
     // developer, or scm. The description in particular reaches the POM through a provider that
     // resolves late, so a wiring mistake surfaces as an empty element rather than a build failure.
     // `check` fails here instead, naming the element, long before the Portal sees it.
+    //
+    // Every generated POM is checked, not one named publication: a plugin module publishes its jar
+    // and a marker, and a marker whose POM is short a required element fails the whole deployment.
     def modulePath = project.path
-    def pomFile = tasks.named("generatePomFileForCentralPortalPublication", GenerateMavenPom)
-            .map { it.destination }
+    def pomTasks = tasks.withType(GenerateMavenPom)
+    def pomFiles = files({ pomTasks.collect { it.destination } }).builtBy(pomTasks)
 
     tasks.register("validatePom") {
-        description = "Verify the generated POM carries the metadata Maven Central requires"
+        description = "Verify every generated POM carries the metadata Maven Central requires"
         group = "verification"
 
-        dependsOn tasks.named("generatePomFileForCentralPortalPublication")
+        inputs.files(pomFiles)
 
         doLast {
-            // Not namespace-aware: the POM declares a default xmlns, and matching bare local names
-            // keeps the lookups readable.
-            def pom = new XmlSlurper(false, false).parse(pomFile.get())
-            def missing = []
-            def require = { String element, String value -> if (!value?.trim()) missing << element }
+            pomFiles.each { pomFile ->
+                // Not namespace-aware: the POM declares a default xmlns, and matching bare local
+                // names keeps the lookups readable.
+                def pom = new XmlSlurper(false, false).parse(pomFile)
+                def missing = []
+                def require = { String element, String value -> if (!value?.trim()) missing << element }
 
-            require("groupId", pom.groupId.text())
-            require("artifactId", pom.artifactId.text())
-            require("version", pom.version.text())
-            require("name", pom.name.text())
-            require("description", pom.description.text())
-            require("url", pom.url.text())
-            require("licenses/license/name", pom.licenses.license.name.text())
-            require("licenses/license/url", pom.licenses.license.url.text())
-            require("developers/developer/name", pom.developers.developer.name.text())
-            require("scm/url", pom.scm.url.text())
-            require("scm/connection", pom.scm.connection.text())
+                require("groupId", pom.groupId.text())
+                require("artifactId", pom.artifactId.text())
+                require("version", pom.version.text())
+                require("name", pom.name.text())
+                require("description", pom.description.text())
+                require("url", pom.url.text())
+                require("licenses/license/name", pom.licenses.license.name.text())
+                require("licenses/license/url", pom.licenses.license.url.text())
+                require("developers/developer/name", pom.developers.developer.name.text())
+                require("scm/url", pom.scm.url.text())
+                require("scm/connection", pom.scm.connection.text())
 
-            if (missing) {
-                throw new GradleException(
-                        "${modulePath} POM is missing metadata Maven Central requires: ${missing.join(', ')} " +
-                        "(see ${pomFile.get()})")
+                if (missing) {
+                    throw new GradleException(
+                            "${modulePath} POM is missing metadata Maven Central requires: ${missing.join(', ')} " +
+                            "(see ${pomFile})")
+                }
             }
         }
     }
@@ -193,8 +309,14 @@ subprojects {
         } else {
             useGpgCmd()
         }
-        sign publishing.publications.centralPortal
         required = isPublishingToCentral
+    }
+
+    // Every publication is signed, for the same reason every POM is validated. `configureEach` also
+    // covers publications registered later, such as the ones `java-gradle-plugin` creates in its own
+    // `afterEvaluate`, so nothing here depends on which callback runs first.
+    publishing.publications.configureEach {
+        signing.sign(it)
     }
 
     tasks.withType(Sign).configureEach {
@@ -220,7 +342,6 @@ configure(codeProjects) {
         errorprone libs.errorprone.core
 
         api libs.jspecify
-        implementation libs.slf4j.api
 
         testImplementation(platform(libs.junit.bom))
         testImplementation(libs.junit.jupiter)
@@ -231,6 +352,16 @@ configure(codeProjects) {
     // 4.1.0 does not pass it automatically.
     tasks.withType(JavaCompile).configureEach {
         options.compilerArgs += "-XDaddTypeAnnotationsToSymbol=true"
+    }
+
+    // Stamped on every module's jar rather than only on the one that reads it: it costs nothing,
+    // and `concordance-gradle` resolves its own version from here through
+    // `Package.getImplementationVersion()` so the plugin and the check it configures always come
+    // from the same release.
+    tasks.named("jar", Jar) {
+        manifest {
+            attributes("Implementation-Version": project.version)
+        }
     }
 
     test {
@@ -265,6 +396,71 @@ configure(codeProjects) {
 project(":conventions") {
     javadoc {
         failOnError = false
+    }
+}
+
+// An Error Prone check is written against javac's own AST and symbol tables, which the jdk.compiler
+// module does not export. Every other module compiles and documents without these; concordance-
+// errorprone does neither with them missing, and its tests run javac in-process through
+// CompilationTestHelper, so the same packages have to be open to the test JVM as well.
+// aggregateJavadoc reads that module's sources too, which is why the list lives out here.
+def javacExports = [
+        "com.sun.tools.javac.api",
+        "com.sun.tools.javac.code",
+        "com.sun.tools.javac.comp",
+        "com.sun.tools.javac.file",
+        "com.sun.tools.javac.main",
+        "com.sun.tools.javac.model",
+        "com.sun.tools.javac.parser",
+        "com.sun.tools.javac.processing",
+        "com.sun.tools.javac.tree",
+        "com.sun.tools.javac.util"
+].collect { "jdk.compiler/${it}=ALL-UNNAMED" as String }
+
+// Dogfooding: this repository's sources are checked against the rule its own AGENTS.md states, by
+// the check in this repository rather than by a published release of it. The wiring is the raw
+// -Xep flags rather than the concordance-gradle plugin, because that plugin resolves the check from
+// Maven Central at its own version, which is the last release and not the working tree.
+// concordance-errorprone's main sources are left out: nothing can supply the check that compiles it.
+// Its test sources are in, checked by the module's own main output, which exists by then.
+def concordanceFlags = { JavaCompile task ->
+    task.options.errorprone.check("Concordance", CheckSeverity.ERROR)
+    task.options.errorprone.option("Concordance:ScaffoldingFieldTypes", "org.slf4j.Logger")
+    task.options.errorprone.option("Concordance:LifecycleAnnotations", [
+            "org.junit.jupiter.api.AfterAll",
+            "org.junit.jupiter.api.AfterEach",
+            "org.junit.jupiter.api.BeforeAll",
+            "org.junit.jupiter.api.BeforeEach"
+    ].join(","))
+}
+
+configure(codeProjects.findAll { it.name != "concordance-errorprone" }) {
+    dependencies {
+        errorprone project(":concordance-errorprone")
+    }
+
+    tasks.withType(JavaCompile).configureEach(concordanceFlags)
+}
+
+project(":concordance-errorprone") {
+    dependencies {
+        testAnnotationProcessor sourceSets.main.output
+    }
+
+    tasks.named("compileTestJava", JavaCompile, concordanceFlags)
+
+    tasks.withType(JavaCompile).configureEach {
+        options.compilerArgs += javacExports.collect { "--add-exports=${it}" as String }
+    }
+
+    javadoc {
+        options.addMultilineStringsOption("-add-exports").value = javacExports
+    }
+
+    tasks.named("test", Test) {
+        jvmArgs += javacExports.collect { "--add-exports=${it}" as String }
+        jvmArgs += ["com.sun.tools.javac.code", "com.sun.tools.javac.comp"]
+                .collect { "--add-opens=jdk.compiler/${it}=ALL-UNNAMED" as String }
     }
 }
 
@@ -310,17 +506,26 @@ tasks.register('aggregateJavadoc', Javadoc) {
         docEncoding = "UTF-8"
         charSet = "UTF-8"
 
-        def acronyms = ["cli", "api"] as Set
+        // Name segments whose display form is not just the segment capitalised.
+        def wordForms = ["api": "API", "cli": "CLI", "errorprone": "Error Prone"]
 
-        codeProjects.each { subproject ->
+        // Each group's pattern ends in `*`, and javadoc puts a package in the first group that
+        // matches it, so a module whose name prefixes another module's would swallow it:
+        // `org.coordinatekit.foundation.concordance*` also matches the errorprone and gradle
+        // packages. Registering the longest name first makes the most specific pattern win.
+        codeProjects.toSorted { -it.name.length() }.each { subproject ->
             def pkgPattern = "${project.group}.${subproject.name.replace('-', '.')}*"
             def groupName = subproject.name.split('-')
-                    .collect { acronyms.contains(it) ? it.toUpperCase() : it.capitalize() }
+                    .collect { wordForms.getOrDefault(it, it.capitalize()) }
                     .join(' ')
             //noinspection GroovyAssignabilityCheck, ForeignDelegate
             group("${groupName} Module", [pkgPattern])
         }
 
         addBooleanOption('Werror', true)
+
+        // concordance-errorprone's sources name javac's own AST and symbol types, which the
+        // jdk.compiler module does not export.
+        addMultilineStringsOption("-add-exports").value = javacExports
     }
 }
