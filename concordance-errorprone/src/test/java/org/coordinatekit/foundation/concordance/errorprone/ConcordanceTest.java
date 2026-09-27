@@ -204,6 +204,22 @@ class ConcordanceTest {
     }
 
     @Test
+    void matchClass__enumConstantBodyChecked() {
+        // ARRANGE + ACT + ASSERT //
+        helper().addSourceLines(
+                "Fixture.java",
+                "enum Fixture {",
+                "    ALPHA {",
+                "        void b() {}",
+                "",
+                "        // BUG: Diagnostic contains: method a() out of order with method b()",
+                "        void a() {}",
+                "    };",
+                "}"
+        ).doTest();
+    }
+
+    @Test
     void matchClass__enumConstantsOutOfOrder() {
         // ARRANGE + ACT + ASSERT //
         helper().addSourceLines(
@@ -283,6 +299,34 @@ class ConcordanceTest {
                 "",
                 "    // BUG: Diagnostic contains: constant A out of order with constant B",
                 "    static final int A = 2;",
+                "}"
+        ).doTest();
+    }
+
+    @Test
+    void matchClass__intentionalOrderArrayForm() {
+        // ARRANGE + ACT + ASSERT //
+        helper().addSourceLines(
+                "Fixture.java",
+                "import org.coordinatekit.foundation.concordance.IntentionalOrder;",
+                "import org.coordinatekit.foundation.concordance.MemberCategory;",
+                "",
+                "@IntentionalOrder(",
+                "        members = {MemberCategory.CONSTANT, MemberCategory.FIELD},",
+                "        reason = \"both run in the order the data is read\")",
+                "class Fixture {",
+                "    int b;",
+                "",
+                "    static final int WIDE = 2;",
+                "",
+                "    int a;",
+                "",
+                "    static final int NARROW = 1;",
+                "",
+                "    void d() {}",
+                "",
+                "    // BUG: Diagnostic contains: method c() out of order with method d()",
+                "    void c() {}",
                 "}"
         ).doTest();
     }
@@ -374,6 +418,22 @@ class ConcordanceTest {
     }
 
     @Test
+    void matchClass__nestedTypeBodyChecked() {
+        // ARRANGE + ACT + ASSERT //
+        helper().addSourceLines(
+                "Fixture.java",
+                "class Fixture {",
+                "    static class Inner {",
+                "        void b() {}",
+                "",
+                "        // BUG: Diagnostic contains: method a() out of order with method b()",
+                "        void a() {}",
+                "    }",
+                "}"
+        ).doTest();
+    }
+
+    @Test
     void matchClass__nestedTypesInvisible() {
         // ARRANGE + ACT + ASSERT //
         helper().addSourceLines(
@@ -390,19 +450,28 @@ class ConcordanceTest {
     }
 
     @Test
-    void matchClass__nestedTypeBodyChecked() {
+    void matchClass__paddedLifecycleFlag() {
         // ARRANGE + ACT + ASSERT //
-        helper().addSourceLines(
-                "Fixture.java",
-                "class Fixture {",
-                "    static class Inner {",
-                "        void b() {}",
-                "",
-                "        // BUG: Diagnostic contains: method a() out of order with method b()",
-                "        void a() {}",
-                "    }",
-                "}"
-        ).doTest();
+        helper("-XepOpt:Concordance:LifecycleAnnotations=fixture.Other, org.junit.jupiter.api.BeforeEach")
+                .addSourceLines(
+                        "BeforeEach.java",
+                        "package org.junit.jupiter.api;",
+                        "",
+                        "public @interface BeforeEach {}"
+                )
+                .addSourceLines(
+                        "Fixture.java",
+                        "import org.junit.jupiter.api.BeforeEach;",
+                        "",
+                        "class Fixture {",
+                        "    void zebra() {}",
+                        "",
+                        "    @BeforeEach",
+                        "    void setUp() {}",
+                        "}"
+                )
+                .expectNoDiagnostics()
+                .doTest();
     }
 
     @Test
@@ -485,6 +554,20 @@ class ConcordanceTest {
                 )
                 .expectNoDiagnostics()
                 .doTest();
+    }
+
+    @Test
+    void matchClass__suppressWarningsSilencesType() {
+        // ARRANGE + ACT + ASSERT //
+        helper().addSourceLines(
+                "Fixture.java",
+                "@SuppressWarnings(\"Concordance\")",
+                "class Fixture {",
+                "    void b() {}",
+                "",
+                "    void a() {}",
+                "}"
+        ).expectNoDiagnostics().doTest();
     }
 
     static Stream<WithinCategoryParameters> matchClass__withinCategory() {
