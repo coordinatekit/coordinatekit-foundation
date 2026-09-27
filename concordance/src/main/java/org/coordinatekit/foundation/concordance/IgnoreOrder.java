@@ -46,5 +46,6 @@ public @interface IgnoreOrder {
      *
      * @return the justification for taking this member out of the check
      */
+    @SuppressWarnings("unused")
     String reason();
 }

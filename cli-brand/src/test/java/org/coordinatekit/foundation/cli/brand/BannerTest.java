@@ -173,6 +173,7 @@ class BannerTest {
      * @param resource the classpath resource path, resolved against {@link Banner}'s package
      * @return the number of lines in the resource, excluding trailing blank lines
      */
+    @SuppressWarnings("SameParameterValue")
     private static int artHeight(String resource) {
         try (InputStream in = Banner.class.getResourceAsStream(resource)) {
             Objects.requireNonNull(in, "missing banner resource: " + resource);

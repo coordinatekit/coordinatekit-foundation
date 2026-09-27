@@ -52,6 +52,7 @@ final class ErrorProneConfiguration {
      * arguments are requested rather than when the task is configured is what lets a consumer's
      * {@code concordance} block, which is evaluated after this plugin is applied, take effect.
      */
+    @SuppressWarnings("ClassCanBeRecord")
     private static final class ExemptionFlags implements CommandLineArgumentProvider {
         /** The lifecycle annotation names the build configured. */
         private final ListProperty<String> lifecycleAnnotations;

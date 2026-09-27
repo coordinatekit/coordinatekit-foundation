@@ -383,6 +383,7 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
                     anchor = members.get(j);
                 }
             }
+            // noinspection DataFlowIssue
             state.reportMatch(
                     anchor == null ? describe(trees.get(i), current, last, false)
                             : describe(trees.get(i), current, anchor, true)
