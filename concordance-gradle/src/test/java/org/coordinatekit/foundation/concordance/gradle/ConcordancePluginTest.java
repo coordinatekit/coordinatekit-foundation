@@ -115,7 +115,7 @@ class ConcordancePluginTest {
         // ASSERT //
         String output = result.getOutput();
         assertTrue(
-                output.contains("error: [Concordance] method alpha() out of order with method zeta()"),
+                output.contains("error: [Concordance] method alpha() belongs before method zeta()"),
                 "expected a Concordance error naming both methods, got:\n" + output
         );
         assertFalse(

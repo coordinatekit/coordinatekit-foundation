@@ -32,6 +32,7 @@ import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Type;
 import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
@@ -56,14 +57,16 @@ import javax.lang.model.element.VariableElement;
  * parameter count instead.
  *
  * <p>
- * One walk over {@link ClassTree#getMembers()} does the whole check. Members arrive in source
- * order, so each one only has to be compared against the last member that was visible to the check:
- * a category that sorts before its predecessor's is a sequence violation, and a member that sorts
- * before its predecessor within the same category is an ordering violation. Anything invisible to
- * the check, whether a compiler-generated member, an exempted one, a nested type, or an initializer
- * block, is skipped without becoming the predecessor, so the members on either side of it compare
- * with each other. The check also applies to anonymous class bodies and enum constant bodies, which
- * javac presents as class trees.
+ * The check reads {@link ClassTree#getMembers()} in source order and keeps the longest run of
+ * members that is already sorted, so it reports the fewest members that have to move. Of two runs
+ * of the same length the one that starts earlier is kept, which puts a lone inversion on the later
+ * member. Each reported member names the nearest kept member it belongs beside: the first kept
+ * member that sorts after it, which it belongs before, or the last kept member when none does,
+ * which it belongs after. Kept members never move, so placing every reported member beside its
+ * anchor leaves the class clean after one compile. Anything invisible to the check, whether a
+ * compiler-generated member, an exempted one, a nested type, or an initializer block, is left out
+ * of the run, so the members on either side of it compare with each other. The check also applies
+ * to anonymous class bodies and enum constant bodies, which javac presents as class trees.
  *
  * <p>
  * Exemptions come from two places. The two annotations,
@@ -111,7 +114,9 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
 
     /**
      * One member the check can see, reduced to what deciding its place needs: the category it belongs
-     * to, the key it sorts by within that category, and the phrase a finding names it with.
+     * to, the key it sorts by within that category, and the phrase a finding names it with. Members
+     * compare by category first, then by parameter count for a constructor or by {@code sortKey}
+     * otherwise.
      *
      * @param category the category this member belongs to
      * @param sortKey the member's name, lower-cased, which is what makes the ordering case-insensitive;
@@ -123,6 +128,10 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
     record Member(Category category, String sortKey, int arity, String description) implements Comparable<Member> {
         @Override
         public int compareTo(Member other) {
+            int byCategory = category.compareTo(other.category);
+            if (byCategory != 0) {
+                return byCategory;
+            }
             return category == Category.CONSTRUCTOR ? Integer.compare(arity, other.arity)
                     : sortKey.compareTo(other.sortKey);
         }
@@ -232,19 +241,18 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
     }
 
     /**
-     * Builds the finding for a member that sits where it should not, naming both members so a reader
-     * knows what to move without opening the file.
+     * Builds the finding for a member that sits where it should not, naming the member it belongs
+     * beside so a reader knows what to move without opening the file.
      *
      * @param tree the member to report the finding against
      * @param current the member that sits out of place
-     * @param previous the member it should have preceded
-     * @param relation the phrase joining the two, either {@code declared after} for a category out of
-     *        sequence or {@code out of order with} for a member out of order within its category
+     * @param anchor the member that stays put, which {@code current} belongs next to
+     * @param before whether {@code current} belongs before the anchor rather than after it
      * @return the finding
      */
-    private Description describe(Tree tree, Member current, Member previous, String relation) {
-        return buildDescription(tree).setMessage(current.description() + " " + relation + " " + previous.description())
-                .build();
+    private Description describe(Tree tree, Member current, Member anchor, boolean before) {
+        String relation = before ? " belongs before " : " belongs after ";
+        return buildDescription(tree).setMessage(current.description() + relation + anchor.description()).build();
     }
 
     /**
@@ -295,6 +303,40 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
     }
 
     /**
+     * Marks the members that stay where they are: the longest run of members already in order. Of two
+     * runs of the same length, the one that starts earlier wins, so a lone inversion is reported on the
+     * later of the two members.
+     *
+     * @param members the visible members, in source order
+     * @return one flag per member, {@code true} for a member in the kept run
+     */
+    private static boolean[] keptRun(List<Member> members) {
+        int size = members.size();
+        int[] best = new int[size];
+        int longest = 0;
+        for (int i = size - 1; i >= 0; i--) {
+            best[i] = 1;
+            for (int j = i + 1; j < size; j++) {
+                if (members.get(i).compareTo(members.get(j)) <= 0 && best[j] + 1 > best[i]) {
+                    best[i] = best[j] + 1;
+                }
+            }
+            longest = Math.max(longest, best[i]);
+        }
+        boolean[] kept = new boolean[size];
+        Member last = null;
+        int need = longest;
+        for (int i = 0; i < size && need > 0; i++) {
+            if (best[i] == need && (last == null || last.compareTo(members.get(i)) <= 0)) {
+                kept[i] = true;
+                last = members.get(i);
+                need--;
+            }
+        }
+        return kept;
+    }
+
+    /**
      * Returns whether {@code element} carries one of the configured lifecycle annotations, such as
      * JUnit's {@code @BeforeEach}, whose position a reader is meant to choose.
      *
@@ -313,20 +355,38 @@ public final class Concordance extends BugChecker implements BugChecker.ClassTre
     @Override
     public Description matchClass(ClassTree tree, VisitorState state) {
         Set<Category> exempt = exemptCategories(tree);
-        Member previous = null;
+        List<Tree> trees = new ArrayList<>();
+        List<Member> members = new ArrayList<>();
         for (Tree raw : tree.getMembers()) {
-            Member current = classify(raw, state);
-            if (current == null || exempt.contains(current.category())) {
+            Member member = classify(raw, state);
+            if (member == null || exempt.contains(member.category())) {
                 continue;
             }
-            if (previous != null) {
-                if (current.category().compareTo(previous.category()) < 0) {
-                    state.reportMatch(describe(raw, current, previous, "declared after"));
-                } else if (current.category() == previous.category() && current.compareTo(previous) < 0) {
-                    state.reportMatch(describe(raw, current, previous, "out of order with"));
+            trees.add(raw);
+            members.add(member);
+        }
+        boolean[] kept = keptRun(members);
+        Member last = null;
+        for (int i = 0; i < members.size(); i++) {
+            if (kept[i]) {
+                last = members.get(i);
+            }
+        }
+        for (int i = 0; i < members.size(); i++) {
+            if (kept[i]) {
+                continue;
+            }
+            Member current = members.get(i);
+            Member anchor = null;
+            for (int j = 0; j < members.size() && anchor == null; j++) {
+                if (kept[j] && members.get(j).compareTo(current) > 0) {
+                    anchor = members.get(j);
                 }
             }
-            previous = current;
+            state.reportMatch(
+                    anchor == null ? describe(trees.get(i), current, last, false)
+                            : describe(trees.get(i), current, anchor, true)
+            );
         }
         return Description.NO_MATCH;
     }

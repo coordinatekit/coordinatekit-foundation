@@ -124,7 +124,7 @@ class ConcordanceTest {
                 "    Runnable task = new Runnable() {",
                 "        public void run() {}",
                 "",
-                "        // BUG: Diagnostic contains: field count declared after method run()",
+                "        // BUG: Diagnostic contains: field count belongs before method run()",
                 "        int count;",
                 "    };",
                 "}"
@@ -137,19 +137,19 @@ class ConcordanceTest {
                         "constant_after_field",
                         "int a;",
                         "static final int B = 1;",
-                        "constant B declared after field a"
+                        "constant B belongs before field a"
                 ),
                 new SequenceParameters(
                         "field_after_constructor",
                         "Fixture() {}",
                         "int a;",
-                        "field a declared after constructor with 0 parameters"
+                        "field a belongs before constructor with 0 parameters"
                 ),
                 new SequenceParameters(
                         "constructor_after_method",
                         "void a() {}",
                         "Fixture() {}",
-                        "constructor with 0 parameters declared after method a()"
+                        "constructor with 0 parameters belongs before method a()"
                 )
         );
     }
@@ -172,9 +172,41 @@ class ConcordanceTest {
                 "class Fixture {",
                 "    Fixture(int a, int b) {}",
                 "",
-                "    // BUG: Diagnostic contains: constructor with 0 parameters out of order with constructor"
+                "    // BUG: Diagnostic contains: constructor with 0 parameters belongs before constructor"
                         + " with 2 parameters",
                 "    Fixture() {}",
+                "}"
+        ).doTest();
+    }
+
+    @Test
+    void matchClass__crossCategoryReportedAlone() {
+        // ARRANGE + ACT + ASSERT //
+        helper().addSourceLines(
+                "Fixture.java",
+                "class Fixture {",
+                "    // BUG: Diagnostic contains: method b() belongs after method a()",
+                "    void b() {}",
+                "",
+                "    int x;",
+                "",
+                "    void a() {}",
+                "}"
+        ).doTest();
+    }
+
+    @Test
+    void matchClass__earlyMemberReportedAlone() {
+        // ARRANGE + ACT + ASSERT //
+        helper().addSourceLines(
+                "Fixture.java",
+                "class Fixture {",
+                "    // BUG: Diagnostic contains: method c() belongs after method b()",
+                "    void c() {}",
+                "",
+                "    void a() {}",
+                "",
+                "    void b() {}",
                 "}"
         ).doTest();
     }
@@ -212,7 +244,7 @@ class ConcordanceTest {
                 "    ALPHA {",
                 "        void b() {}",
                 "",
-                "        // BUG: Diagnostic contains: method a() out of order with method b()",
+                "        // BUG: Diagnostic contains: method a() belongs before method b()",
                 "        void a() {}",
                 "    };",
                 "}"
@@ -226,7 +258,7 @@ class ConcordanceTest {
                 "Fixture.java",
                 "enum Fixture {",
                 "    ZETA,",
-                "    // BUG: Diagnostic contains: enum constant ALPHA out of order with enum constant ZETA",
+                "    // BUG: Diagnostic contains: enum constant ALPHA belongs before enum constant ZETA",
                 "    ALPHA",
                 "}"
         ).doTest();
@@ -245,7 +277,7 @@ class ConcordanceTest {
                 "",
                 "    void beta() {}",
                 "",
-                "    // BUG: Diagnostic contains: method alpha() out of order with method beta()",
+                "    // BUG: Diagnostic contains: method alpha() belongs before method beta()",
                 "    void alpha() {}",
                 "}"
         ).doTest();
@@ -280,7 +312,7 @@ class ConcordanceTest {
                 "    @IgnoreOrder(reason = \"parked next to its overload\")",
                 "    void a() {}",
                 "",
-                "    // BUG: Diagnostic contains: method b() out of order with method c()",
+                "    // BUG: Diagnostic contains: method b() belongs before method c()",
                 "    void b() {}",
                 "}"
         ).doTest();
@@ -297,8 +329,28 @@ class ConcordanceTest {
                 "    static {",
                 "    }",
                 "",
-                "    // BUG: Diagnostic contains: constant A out of order with constant B",
+                "    // BUG: Diagnostic contains: constant A belongs before constant B",
                 "    static final int A = 2;",
+                "}"
+        ).doTest();
+    }
+
+    @Test
+    void matchClass__insertedMemberReportedAlone() {
+        // ARRANGE + ACT + ASSERT //
+        helper().addSourceLines(
+                "Fixture.java",
+                "class Fixture {",
+                "    void a() {}",
+                "",
+                "    // BUG: Diagnostic contains: method x() belongs before method y()",
+                "    void x() {}",
+                "",
+                "    void b() {}",
+                "",
+                "    void c() {}",
+                "",
+                "    void y() {}",
                 "}"
         ).doTest();
     }
@@ -325,7 +377,7 @@ class ConcordanceTest {
                 "",
                 "    void d() {}",
                 "",
-                "    // BUG: Diagnostic contains: method c() out of order with method d()",
+                "    // BUG: Diagnostic contains: method c() belongs before method d()",
                 "    void c() {}",
                 "}"
         ).doTest();
@@ -346,7 +398,7 @@ class ConcordanceTest {
                 "",
                 "    void b() {}",
                 "",
-                "    // BUG: Diagnostic contains: method a() out of order with method b()",
+                "    // BUG: Diagnostic contains: method a() belongs before method b()",
                 "    void a() {}",
                 "}"
         ).doTest();
@@ -360,7 +412,7 @@ class ConcordanceTest {
                 "interface Fixture {",
                 "    int ZEBRA = 1;",
                 "",
-                "    // BUG: Diagnostic contains: constant APPLE out of order with constant ZEBRA",
+                "    // BUG: Diagnostic contains: constant APPLE belongs before constant ZEBRA",
                 "    int APPLE = 2;",
                 "",
                 "    void b();",
@@ -385,7 +437,7 @@ class ConcordanceTest {
                         "    void zebra() {}",
                         "",
                         "    @BeforeEach",
-                        "    // BUG: Diagnostic contains: method setUp() out of order with method zebra()",
+                        "    // BUG: Diagnostic contains: method setUp() belongs before method zebra()",
                         "    void setUp() {}",
                         "}"
                 )
@@ -418,6 +470,22 @@ class ConcordanceTest {
     }
 
     @Test
+    void matchClass__misplacedFieldReportedAlone() {
+        // ARRANGE + ACT + ASSERT //
+        helper().addSourceLines(
+                "Fixture.java",
+                "class Fixture {",
+                "    // BUG: Diagnostic contains: field b belongs after constant C",
+                "    int b;",
+                "",
+                "    static final int A = 1;",
+                "",
+                "    static final int C = 2;",
+                "}"
+        ).doTest();
+    }
+
+    @Test
     void matchClass__nestedTypeBodyChecked() {
         // ARRANGE + ACT + ASSERT //
         helper().addSourceLines(
@@ -426,7 +494,7 @@ class ConcordanceTest {
                 "    static class Inner {",
                 "        void b() {}",
                 "",
-                "        // BUG: Diagnostic contains: method a() out of order with method b()",
+                "        // BUG: Diagnostic contains: method a() belongs before method b()",
                 "        void a() {}",
                 "    }",
                 "}"
@@ -443,7 +511,7 @@ class ConcordanceTest {
                 "",
                 "    record P() {}",
                 "",
-                "    // BUG: Diagnostic contains: method a() out of order with method b()",
+                "    // BUG: Diagnostic contains: method a() belongs before method b()",
                 "    void a() {}",
                 "}"
         ).doTest();
@@ -513,7 +581,7 @@ class ConcordanceTest {
                 "record Fixture(int a) {",
                 "    Fixture {}",
                 "",
-                "    // BUG: Diagnostic contains: constructor with 0 parameters out of order with constructor"
+                "    // BUG: Diagnostic contains: constructor with 0 parameters belongs before constructor"
                         + " with 1 parameter",
                 "    Fixture() {",
                 "        this(0);",
@@ -532,7 +600,7 @@ class ConcordanceTest {
                 "class Fixture {",
                 "    static final int ZEBRA = 1;",
                 "",
-                "    // BUG: Diagnostic contains: constant log out of order with constant ZEBRA",
+                "    // BUG: Diagnostic contains: constant log belongs before constant ZEBRA",
                 "    static final Logger log = null;",
                 "}"
         ).doTest();
@@ -577,26 +645,26 @@ class ConcordanceTest {
                         "methods_out_of_order",
                         "void b() {}",
                         "void a() {}",
-                        "method a() out of order with method b()"
+                        "method a() belongs before method b()"
                 ),
                 new WithinCategoryParameters(
                         "methods_compared_case_insensitively",
                         "void Beta() {}",
                         "void alpha() {}",
-                        "method alpha() out of order with method Beta()"
+                        "method alpha() belongs before method Beta()"
                 ),
                 new WithinCategoryParameters("overloads_compare_equal", "void a(int first) {}", "void a() {}", null),
                 new WithinCategoryParameters(
                         "constants_out_of_order",
                         "static final int B = 1;",
                         "static final int A = 2;",
-                        "constant A out of order with constant B"
+                        "constant A belongs before constant B"
                 ),
                 new WithinCategoryParameters(
                         "fields_out_of_order",
                         "int b;",
                         "int a;",
-                        "field a out of order with field b"
+                        "field a belongs before field b"
                 )
         );
     }
