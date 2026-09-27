@@ -10,7 +10,7 @@ It includes `cli-brand`, the brand banner CoordinateKit's command-line tools pri
 
 ```groovy
 dependencies {
-    implementation "org.coordinatekit.foundation:cli-brand:0.1.0"
+    implementation "org.coordinatekit.foundation:cli-brand:0.2.0"
 }
 ```
 
@@ -87,7 +87,7 @@ configurations {
 }
 
 dependencies {
-    conventions "org.coordinatekit.foundation:conventions:0.1.0"
+    conventions "org.coordinatekit.foundation:conventions:0.2.0"
 }
 
 def conventionsBase = "org/coordinatekit/foundation/conventions"
@@ -114,5 +114,5 @@ The example points `licenseHeaderFile` at the consumer's own file rather than at
 Nothing about the jar assumes Gradle or Spotless. Both entries are plain text and can be unpacked with any zip tool, checked into a repository, or fed to a different formatter:
 
 ```
-unzip -j conventions-0.1.0.jar 'org/coordinatekit/foundation/conventions/*' -d config/
+unzip -j conventions-0.2.0.jar 'org/coordinatekit/foundation/conventions/*' -d config/
 ```
