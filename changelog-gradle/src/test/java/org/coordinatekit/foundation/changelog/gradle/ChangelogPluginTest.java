@@ -22,9 +22,15 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.lib.PersonIdent;
 import org.gradle.api.GradleException;
 import org.gradle.api.Project;
 import org.gradle.testfixtures.ProjectBuilder;
+import org.gradle.testkit.runner.BuildResult;
+import org.gradle.testkit.runner.GradleRunner;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -33,18 +39,34 @@ import se.bjurr.gitchangelog.plugin.gradle.GitChangelogTask;
 import se.bjurr.gitchangelog.plugin.gradle.HelperParam;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Properties;
 import java.util.stream.Stream;
 
 /**
- * Tests for {@link ChangelogPlugin}. The conventions the plugin sets on the {@code gitChangelog}
- * task are read straight off it through {@link ProjectBuilder}, and the guard's decisions are
- * driven as plain statics over files in a temporary directory. Whether the whole thing renders a
- * real changelog is left to this repository's own {@code gitChangelog} run, which applies the
- * plugin from source.
+ * Unit and functional tests for {@link ChangelogPlugin}. The conventions the plugin sets on the
+ * {@code gitChangelog} task are read straight off it through {@link ProjectBuilder}, and the
+ * guard's decisions are driven as plain statics over files in a temporary directory. Everything
+ * that only a real build can show, the template rendering a history, the guard's actions wrapping
+ * the task, and the configuration cache reusing both, runs through TestKit against a throwaway git
+ * repository.
+ *
+ * <p>
+ * JGit writes that repository's history with pinned dates, so the rendered release headings do not
+ * depend on when or where the test runs. The project directory is also the repository, which is
+ * where git-changelog looks by default.
+ *
+ * <p>
+ * The fixture builds run in daemons that the test JVM's coverage agent cannot reach. When the test
+ * task sets {@code testKit.fixtureJvmArgs}, {@code writeFixture} passes it on through each
+ * fixture's {@code gradle.properties}, which is how the build records their coverage. Without it,
+ * as under an IDE's own test runner, the fixtures run the same and record nothing.
  */
 class ChangelogPluginTest {
     /**
@@ -58,6 +80,9 @@ class ChangelogPluginTest {
     /** The id the plugin is applied under. */
     private static final String PLUGIN_ID = "org.coordinatekit.foundation.changelog";
 
+    /** The repository URL every fixture build takes its links from. */
+    private static final String REPO_URL = "https://github.com/example/fixture";
+
     @Test
     void apply__appliesGitChangelogAndRegistersTheExtension() {
         // ARRANGE //
@@ -69,6 +94,20 @@ class ChangelogPluginTest {
         // ASSERT //
         assertTrue(project.getPlugins().hasPlugin("se.bjurr.gitchangelog.git-changelog-gradle-plugin"));
         assertFalse(project.getExtensions().getByType(ChangelogExtension.class).getRepoUrl().isPresent());
+    }
+
+    @Test
+    void apply__failsWithoutRepoUrl(@TempDir Path directory) throws IOException {
+        // ARRANGE //
+        writeFixture(directory, null, "");
+        Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "previous");
+
+        // ACT //
+        BuildResult result = runner(directory).withArguments("gitChangelog").buildAndFail();
+
+        // ASSERT //
+        assertTrue(result.getOutput().contains("repoUrl="), result.getOutput());
+        assertEquals("previous", Files.readString(changelog), "a rejected run leaves the file alone");
     }
 
     @Test
@@ -87,6 +126,66 @@ class ChangelogPluginTest {
         // ASSERT //
         assertTrue(unsetBefore);
         assertEquals("v0.1.0", task.fromRevision.get());
+    }
+
+    @Test
+    void apply__rendersTaggedHistory(@TempDir Path directory) throws GitAPIException, IOException {
+        // ARRANGE //
+        writeFixture(directory, REPO_URL, "");
+        String fixHash = writeHistory(directory);
+
+        // ACT //
+        runner(directory).withArguments("gitChangelog").build();
+
+        // ASSERT //
+        String changelog = Files.readString(directory.resolve("CHANGELOG.md"));
+        assertTrue(changelog.contains("## [0.2.0] - 2026-01-"), changelog);
+        assertTrue(changelog.contains("## [0.1.0] - 2026-01-"), changelog);
+        assertTrue(changelog.contains("### BREAKING CHANGES"), changelog);
+        assertTrue(changelog.contains("### Deprecated"), changelog);
+        assertTrue(changelog.contains("### Features"), changelog);
+        assertTrue(changelog.contains("### Bug Fixes"), changelog);
+        assertTrue(changelog.contains("(" + REPO_URL + "/pull/12)"), changelog);
+        assertTrue(changelog.contains(REPO_URL + "/commit/" + fixHash), changelog);
+        assertTrue(changelog.contains("[0.2.0]: " + REPO_URL + "/releases/tag/v0.2.0"), changelog);
+        assertFalse(changelog.contains("(#12)"), "the pull request reference moves out of the description");
+    }
+
+    @Test
+    void apply__restoresThePreviousFileWhenRenderFails(@TempDir Path directory) throws GitAPIException, IOException {
+        // ARRANGE //
+        writeFixture(directory, REPO_URL, """
+
+                foundationChangelog {
+                    initialRelease = file("missing.md")
+                }
+                """);
+        writeHistory(directory);
+        Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "previous");
+
+        // ACT //
+        BuildResult result = runner(directory).withArguments("gitChangelog").buildAndFail();
+
+        // ASSERT //
+        assertTrue(result.getOutput().contains("did not write"), result.getOutput());
+        assertEquals("previous", Files.readString(changelog), "a failed render loses nothing");
+    }
+
+    @Test
+    void apply__reusesTheConfigurationCache(@TempDir Path directory) throws GitAPIException, IOException {
+        // ARRANGE //
+        writeFixture(directory, REPO_URL, "");
+        writeHistory(directory);
+        GradleRunner runner = runner(directory).withArguments("gitChangelog", "--configuration-cache");
+
+        // ACT //
+        runner.build();
+        BuildResult result = runner.build();
+
+        // ASSERT //
+        assertTrue(result.getOutput().contains("Reusing configuration cache"), result.getOutput());
+        String changelog = Files.readString(directory.resolve("CHANGELOG.md"));
+        assertTrue(changelog.contains("## [0.2.0]"), "the guard still ran on the reused graph:\n" + changelog);
     }
 
     @Test
@@ -115,6 +214,30 @@ class ChangelogPluginTest {
     }
 
     @Test
+    void apply__startsAfterFromRevisionAndAppendsInitialRelease(@TempDir Path directory)
+            throws GitAPIException, IOException {
+        // ARRANGE //
+        writeFixture(directory, REPO_URL, """
+
+                foundationChangelog {
+                    fromRevision = "v0.1.0"
+                    initialRelease = file("initial.md")
+                }
+                """);
+        writeHistory(directory);
+        Files.writeString(directory.resolve("initial.md"), "## [0.0.1] - earlier\n");
+
+        // ACT //
+        runner(directory).withArguments("gitChangelog").build();
+
+        // ASSERT //
+        String changelog = Files.readString(directory.resolve("CHANGELOG.md"));
+        assertTrue(changelog.contains("## [0.2.0]"), changelog);
+        assertFalse(changelog.contains("seed the widget"), changelog);
+        assertTrue(changelog.stripTrailing().endsWith("## [0.0.1] - earlier"), changelog);
+    }
+
+    @Test
     void apply__takesTheRepoUrlFromAGradleProperty(@TempDir Path directory) throws IOException {
         // ARRANGE //
         Files.writeString(directory.resolve("gradle.properties"), "repoUrl=https://github.com/coordinatekit/crf\n");
@@ -130,8 +253,41 @@ class ChangelogPluginTest {
         );
     }
 
+    /**
+     * Writes a file and commits it under the fixed identity for the given day.
+     *
+     * @param git the repository to commit to
+     * @param message the full commit message, footers included
+     * @param day the day of January 2026 the commit is dated
+     * @return the full hash of the new commit
+     * @throws GitAPIException if the commit fails
+     * @throws IOException if the file cannot be written
+     */
+    private static String commit(Git git, String message, int day) throws GitAPIException, IOException {
+        Files.writeString(git.getRepository().getWorkTree().toPath().resolve("history.txt"), message);
+        git.add().addFilepattern("history.txt").call();
+        PersonIdent person = person(day);
+        return git.commit().setMessage(message).setAuthor(person).setCommitter(person).setSign(false).call().name();
+    }
+
     private static GitChangelogTask gitChangelog(Project project) {
         return (GitChangelogTask) project.getTasks().getByName("gitChangelog");
+    }
+
+    /**
+     * Returns the identity every fixture commit and tag carries. The time is noon UTC, which renders as
+     * the same {@code yyyy-MM-dd} date in whatever zone the daemon runs.
+     *
+     * @param day the day of January 2026
+     * @return the identity dated at noon UTC on that day
+     */
+    private static PersonIdent person(int day) {
+        return new PersonIdent(
+                "Fixture",
+                "fixture@example.com",
+                Instant.parse("2026-01-%02dT12:00:00Z".formatted(day)),
+                ZoneOffset.UTC
+        );
     }
 
     static Stream<BlankRepoUrlParameters> prepare__blankRepoUrl() {
@@ -184,6 +340,29 @@ class ChangelogPluginTest {
         assertFalse(Files.exists(changelog));
     }
 
+    /**
+     * Returns a runner for a fixture build, with the plugin under test and the git-changelog plugin it
+     * applies on the same classpath.
+     *
+     * @param directory the fixture's project directory
+     * @return a runner rooted there
+     */
+    private static GradleRunner runner(Path directory) {
+        return GradleRunner.create().withProjectDir(directory.toFile()).withPluginClasspath();
+    }
+
+    /**
+     * Tags the current commit with an annotated tag dated for the given day.
+     *
+     * @param git the repository to tag
+     * @param name the tag name
+     * @param day the day of January 2026 the tag is dated
+     * @throws GitAPIException if the tag fails
+     */
+    private static void tag(Git git, String name, int day) throws GitAPIException {
+        git.tag().setName(name).setMessage(name).setTagger(person(day)).setAnnotated(true).setSigned(false).call();
+    }
+
     @Test
     void template__ships() {
         // ACT //
@@ -233,5 +412,63 @@ class ChangelogPluginTest {
 
         // ASSERT //
         assertFalse(Files.exists(changelog));
+    }
+
+    /**
+     * Writes a consumer build that applies the plugin, followed by the given text. The build gets a
+     * {@code gradle.properties} carrying {@code repoUrl}, and the daemon arguments from
+     * {@code testKit.fixtureJvmArgs} when the test task sets it.
+     *
+     * @param directory the project directory to write into
+     * @param repoUrl the {@code repoUrl} property, or {@code null} to leave it out
+     * @param block Gradle script appended after the {@code plugins} block, such as a
+     *        {@code foundationChangelog} block
+     * @throws IOException if the fixture cannot be written
+     */
+    private static void writeFixture(Path directory, @Nullable String repoUrl, String block) throws IOException {
+        Files.writeString(directory.resolve("settings.gradle"), "rootProject.name = \"fixture\"\n");
+        Files.writeString(directory.resolve("build.gradle"), """
+                plugins {
+                    id "%s"
+                }
+                """.formatted(PLUGIN_ID) + block);
+
+        Properties properties = new Properties();
+        if (repoUrl != null) {
+            properties.setProperty("repoUrl", repoUrl);
+        }
+        String jvmArgs = System.getProperty("testKit.fixtureJvmArgs");
+        if (jvmArgs != null) {
+            properties.setProperty("org.gradle.jvmargs", jvmArgs);
+        }
+        try (OutputStream file = Files.newOutputStream(directory.resolve("gradle.properties"))) {
+            properties.store(file, null);
+        }
+    }
+
+    /**
+     * Turns the directory into a git repository with two tagged releases. {@code v0.1.0} holds a single
+     * feature on top of a first commit that the changelog has no section for, so that the tag does not
+     * sit on a root commit, which git-changelog includes even when it is the exclusive lower bound of
+     * {@code fromRevision}. {@code v0.2.0} adds a feature with a pull request reference, a fix without
+     * one, a breaking change, and a deprecation, the last two carrying their footers.
+     *
+     * @param directory the project directory, which becomes the repository
+     * @return the full hash of the fix commit
+     * @throws GitAPIException if any git operation fails
+     * @throws IOException if a file cannot be written
+     */
+    private static String writeHistory(Path directory) throws GitAPIException, IOException {
+        try (Git git = Git.init().setDirectory(directory.toFile()).setInitialBranch("main").call()) {
+            commit(git, "chore: start the repository", 1);
+            commit(git, "feat: seed the widget", 1);
+            tag(git, "v0.1.0", 1);
+            commit(git, "feat: add the widget (#12)", 2);
+            String fixHash = commit(git, "fix: mend the widget", 3);
+            commit(git, "feat!: drop the legacy widget\n\nBREAKING CHANGE: the widget no longer exists", 4);
+            commit(git, "refactor: replace the gadget\n\nDEPRECATED: the gadget goes away next release", 5);
+            tag(git, "v0.2.0", 5);
+            return fixHash;
+        }
     }
 }

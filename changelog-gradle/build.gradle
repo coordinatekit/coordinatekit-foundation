@@ -17,4 +17,6 @@ gradlePlugin {
 
 dependencies {
     implementation libs.gitchangelog.gradle.plugin
+
+    testImplementation libs.jgit
 }

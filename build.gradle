@@ -49,10 +49,10 @@ configure(pluginProjects) {
     }
 }
 
-// Only ConcordancePluginTest drives a real Gradle build through TestKit, so the fixture wiring below
-// belongs to concordance-gradle alone; changelog-gradle's tests run in-process.
-configure(project(":concordance-gradle")) {
-    // The functional test's fixture builds run in TestKit daemons, out of reach of the test JVM's
+// Both plugin modules test against real Gradle builds through TestKit, so they share the fixture
+// wiring below.
+configure(pluginProjects) {
+    // The functional tests' fixture builds run in TestKit daemons, out of reach of the test JVM's
     // JaCoCo agent, and an agent added to the daemon records nothing either: Gradle rewrites a build
     // script's classpath jars and loads its rewritten copy, so the classes an agent instruments are
     // not the ones that run. The fixture builds get a copy of the jar JaCoCo has instrumented
@@ -100,7 +100,7 @@ configure(project(":concordance-gradle")) {
         outputs.file(fixtureExecutionData).withPropertyName("fixtureExecutionData")
         doFirst { fixtureExecutionData.get().asFile.delete() }
         jvmArgumentProviders.add({
-            ["-Dconcordance.fixtureJvmArgs=-Xbootclasspath/a:${runtime.singleFile} -Djacoco-agent.destfile=${fixtureExecutionData.get().asFile}" as String]
+            ["-DtestKit.fixtureJvmArgs=-Xbootclasspath/a:${runtime.singleFile} -Djacoco-agent.destfile=${fixtureExecutionData.get().asFile}" as String]
         } as CommandLineArgumentProvider)
     }
 
@@ -111,14 +111,17 @@ configure(project(":concordance-gradle")) {
     // TestKit's withPluginClasspath() defaults to the plugin's class directories, and a directory
     // carries no jar manifest. The plugin reads its own version out of one, so the functional test
     // gets the instrumented jar instead, whose manifest is the published jar's, and exercises the
-    // same path a published plugin takes.
+    // same path a published plugin takes. It is also the jar whose probes record the fixture
+    // coverage, so both modules need it, not only the one that reads its manifest.
     tasks.named("pluginUnderTestMetadata", org.gradle.plugin.devel.tasks.PluginUnderTestMetadata) {
         def instrumentedJar = files(testKitJarDirectory.map { it.asFileTree.matching { include "*.jar" } }) {
             builtBy instrumentTestKitJar
         }
         pluginClasspath.setFrom(instrumentedJar, configurations.runtimeClasspath)
     }
+}
 
+configure(project(":concordance-gradle")) {
     // The functional test's fixture build resolves the check from a flatDir repository rather than
     // from Maven Central, so it needs that module's jar built and needs to be told where it and the
     // versions the fixture pins came from. The jar is declared as an input, not just an ordering
