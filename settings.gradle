@@ -1,5 +1,6 @@
 rootProject.name = "coordinatekit-foundation"
 
+include "changelog-gradle"
 include "cli-brand"
 include "concordance"
 include "concordance-errorprone"

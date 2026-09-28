@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 {{#commits}}
 {{#ifCommitBreaking .}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}]({{{repoUrl}}}/pull/{{pullRequest .}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
 {{#eachCommitFooter . tokenMatching="BREAKING[ -]CHANGE"}}
 {{#ifFooterHasValue .}}
   {{{value}}}
@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 {{#commits}}
 {{#ifCommitDeprecated .}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}]({{{repoUrl}}}/pull/{{pullRequest .}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
 {{#eachCommitFooter . tokenMatching="DEPRECATED"}}
 {{#ifFooterHasValue .}}
   {{{value}}}
@@ -44,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 {{#commits}}
 {{#ifCommitType . type="feat"}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}]({{{repoUrl}}}/pull/{{pullRequest .}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
 {{/ifCommitType}}
 {{/commits}}
 {{/ifContainsType}}
@@ -54,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 {{#commits}}
 {{#ifCommitType . type="fix"}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}]({{{repoUrl}}}/pull/{{pullRequest .}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
 {{/ifCommitType}}
 {{/commits}}
 {{/ifContainsType}}
@@ -64,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 {{#commits}}
 {{#ifCommitType . type="perf"}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}]({{{repoUrl}}}/pull/{{pullRequest .}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
 {{/ifCommitType}}
 {{/commits}}
 {{/ifContainsType}}
@@ -74,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 {{#commits}}
 {{#ifCommitType . type="build"}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}]({{{repoUrl}}}/pull/{{pullRequest .}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
 {{/ifCommitType}}
 {{/commits}}
 {{/ifContainsType}}
@@ -84,11 +84,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 {{#commits}}
 {{#ifCommitType . type="revert"}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}](__REPO_URL__/pull/{{pullRequest .}})){{else}} ([{{hash}}](__REPO_URL__/commit/{{hashFull}})){{/ifMatches}}
+- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}]({{{repoUrl}}}/pull/{{pullRequest .}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
 {{/ifCommitType}}
 {{/commits}}
 {{/ifContainsType}}
 
-[{{subString name 1}}]: __REPO_URL__/releases/tag/{{name}}
+[{{subString name 1}}]: {{{repoUrl}}}/releases/tag/{{name}}
 {{/ifReleaseTag}}
 {{/tags}}
+{{#if (initialRelease)}}
+
+{{{initialRelease}}}
+{{/if}}

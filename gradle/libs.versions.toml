@@ -10,6 +10,7 @@ errorprone-target = "2.50.0"
 errorprone-plugin-target = "5.1.0"
 
 # implementation — keep current
+gitchangelog-plugin = "3.1.2"
 jline = "4.4.6"
 slf4j = "2.0.18"
 
@@ -19,7 +20,6 @@ junit = "6.1.3"
 # build — keep current
 errorprone = "2.50.0"
 errorprone-plugin = "5.1.1"
-gitchangelog-plugin = "3.1.2"
 nmcp = "1.6.1"
 spotless = "8.10.0"
 
@@ -32,6 +32,7 @@ errorprone-core = { module = "com.google.errorprone:error_prone_core", version.r
 errorprone-core-target = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone-target" }
 errorprone-gradle-plugin = { module = "net.ltgt.gradle:gradle-errorprone-plugin", version.ref = "errorprone-plugin-target" }
 errorprone-test-helpers = { module = "com.google.errorprone:error_prone_test_helpers", version.ref = "errorprone-target" }
+gitchangelog-gradle-plugin = { module = "se.bjurr.gitchangelog:git-changelog-gradle-plugin", version.ref = "gitchangelog-plugin" }
 jline = { module = "org.jline:jline", version.ref = "jline" }
 jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
@@ -41,6 +42,5 @@ slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 
 [plugins]
 errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
-gitchangelog = { id = "se.bjurr.gitchangelog.git-changelog-gradle-plugin", version.ref = "gitchangelog-plugin" }
 nmcp-aggregation = { id = "com.gradleup.nmcp.aggregation", version.ref = "nmcp" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

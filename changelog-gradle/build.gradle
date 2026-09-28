@@ -1,0 +1,20 @@
+description = "Gradle plugin applying CoordinateKit's git-changelog defaults: one template, one section list, one set of helpers."
+
+// The one block outside the description-and-dependencies rule the other modules keep to: a plugin
+// id and its implementation class are this module's identity rather than build wiring, and
+// java-gradle-plugin reads them from here to generate the descriptor and the marker publication.
+// buildSrc/build.gradle registers the same plugin, because it compiles this module's sources.
+gradlePlugin {
+    plugins {
+        changelog {
+            id = "org.coordinatekit.foundation.changelog"
+            implementationClass = "org.coordinatekit.foundation.changelog.gradle.ChangelogPlugin"
+            displayName = "Changelog"
+            description = project.description
+        }
+    }
+}
+
+dependencies {
+    implementation libs.gitchangelog.gradle.plugin
+}
