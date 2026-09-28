@@ -2,7 +2,7 @@
 
 The base layer CoordinateKit's projects build on. Functionality more than one repository needs is implemented here once and consumed as a published library.
 
-It includes `cli-brand`, the brand banner CoordinateKit's command-line tools print; `changelog-gradle`, the Gradle plugin that generates `CHANGELOG.md` from conventional commits; `conventions`, the Eclipse formatter profile and license header CoordinateKit's Java sources are formatted against; Concordance, the member-order rule those sources follow, which takes three modules of its own; and two Gradle plugins that aggregate a multi-module build's Javadoc and JaCoCo coverage. Every jar comes straight from Maven Central; see [RELEASE.md](RELEASE.md) for how a release ships and how to depend on a `-SNAPSHOT` build instead.
+It includes `cli-brand`, the brand banner CoordinateKit's command-line tools print; `changelog-gradle`, the Gradle plugin that generates `CHANGELOG.md` from conventional commits; `conventions`, the Eclipse formatter profile and license header CoordinateKit's Java sources are formatted against; Concordance, the member-order rule those sources follow, which takes three modules of its own; two Gradle plugins that aggregate a multi-module build's Javadoc and JaCoCo coverage; and `third-party-licenses-gradle`, the plugin that checks a build's dependency licenses and renders its third-party attribution file. Every jar comes straight from Maven Central; see [RELEASE.md](RELEASE.md) for how a release ships and how to depend on a `-SNAPSHOT` build instead.
 
 ## CLI brand
 
@@ -213,3 +213,59 @@ Nothing about the jar assumes Gradle or Spotless. Both entries are plain text an
 ```
 unzip -j conventions-0.2.0.jar 'org/coordinatekit/foundation/conventions/*' -d config/
 ```
+
+## Third-party licenses
+
+`org.coordinatekit.foundation:third-party-licenses-gradle` is a Gradle plugin, applied under the id `org.coordinatekit.foundation.third-party-licenses`, that checks the licenses of a build's runtime dependencies and renders the `THIRD-PARTY-LICENSES.txt` its distribution ships. It applies and configures the [dependency-license-report](https://github.com/jk1/Gradle-License-Report) plugin itself, so a consuming build never touches that plugin's own block. The plugin holds logic only. The license texts, the allowlist, the normalizer bundle, the license overrides, and the copyright notices are the consumer's compliance decisions and stay in the consumer's repository.
+
+The plugin itself publishes to Maven Central, but the license report plugin it applies publishes only to the Gradle Plugin Portal, so `settings.gradle` needs both repositories in its plugin resolution:
+
+```groovy
+pluginManagement {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+```
+
+The build applies the plugin beside `application` and describes its licenses in a `thirdPartyLicenses` block:
+
+```groovy
+plugins {
+    id "application"
+    id "org.coordinatekit.foundation.third-party-licenses" version "0.2.0"
+}
+
+thirdPartyLicenses {
+    excludeGroups = ["org.example"]
+    excludeBoms = true
+    licenseOverrides = ["org.example.legacy:legacy-core": "MIT License"]
+    copyrightNotices = ["org.example.legacy:legacy-core": "Copyright (c) 2009 Example Authors"]
+    licenses {
+        register("Apache License, Version 2.0") {
+            text = file("licenses/Apache-2.0.txt")
+            includeNoticeFile = true
+        }
+        register("MIT License") {
+            text = file("licenses/MIT.txt")
+            noticeRequired = true
+        }
+        register("Eclipse Public License - v 2.0") {
+            text = file("licenses/EPL-2.0.txt")
+            reciprocalLabel = "the Eclipse Public License"
+        }
+    }
+}
+```
+
+Modules are keyed `group:artifact`. Each license is registered by the normalized name the license report gives it, and only `text` is required. `noticeRequired` fails the build for a dependency under that license with no entry in `copyrightNotices`, which MIT and the BSD licenses need because keeping the copyright notice is their obligation. `includeNoticeFile` copies a dependency's own `META-INF/NOTICE` or `NOTICE` out of its jar, which Apache 2.0 asks for. `reciprocalLabel` marks a license as reciprocal or copyleft and names its family in the source-availability sentence of the preamble, which lists exactly the families present among the dependencies. `excludeBoms` is `false` by default.
+
+Two files sit beside the build script by default, and both locations can be changed through `allowedLicensesFile` and `normalizerBundleFile`:
+
+- `allowed-licenses.json` lists the license each runtime dependency may carry, in the format of the license report's `checkLicense` task. An entry with an empty `moduleLicense` allows a dependency whose POM declares none, and an override supplies its real license for the attribution. Every non-empty `moduleLicense` has to be a registered license, and the project fails at evaluation if one is not.
+- `license-normalizer-bundle.json` maps the spellings POMs use onto the names the rest of the configuration uses. It is merged with the license report's built-in bundle. When the file is absent, no normalizer runs.
+
+`checkLicense` runs as part of `check` and fails on a dependency whose license is not allowed. `generateThirdPartyLicenses` renders the attribution into `build/reports/third-party-licenses` and, under the `application` plugin, adds it to the main distribution. It fails on a dependency whose license is not registered and on a required copyright notice that is missing, and both messages name the block that fixes them. Both tasks read `runtimeClasspath`, so the `java` plugin has to be applied.
+
+The preamble of the rendered file says each dependency ships as a separate jar under `lib/`, and the source-availability sentence relies on that. It suits a distribution that lays its jars out under `lib/`, as `application` does, and does not suit a fat jar.
