@@ -139,16 +139,67 @@ class ChangelogPluginTest {
 
         // ASSERT //
         String changelog = Files.readString(directory.resolve("CHANGELOG.md"));
-        assertTrue(changelog.contains("## [0.2.0] - 2026-01-"), changelog);
-        assertTrue(changelog.contains("## [0.1.0] - 2026-01-"), changelog);
-        assertTrue(changelog.contains("### BREAKING CHANGES"), changelog);
-        assertTrue(changelog.contains("### Deprecated"), changelog);
-        assertTrue(changelog.contains("### Features"), changelog);
-        assertTrue(changelog.contains("### Bug Fixes"), changelog);
-        assertTrue(changelog.contains("(" + REPO_URL + "/pull/12)"), changelog);
-        assertTrue(changelog.contains(REPO_URL + "/commit/" + fixHash), changelog);
-        assertTrue(changelog.contains("[0.2.0]: " + REPO_URL + "/releases/tag/v0.2.0"), changelog);
+        String hashless = changelog.replaceAll("\\(\\[[0-9a-f]+\\]\\([^)]*/commit/[0-9a-f]{40}\\)\\)", "(HASH)");
+        String latest = releaseBody(hashless, "0.2.0");
+        String first = releaseBody(hashless, "0.1.0");
+        assertTrue(latest.startsWith("## [0.2.0] - 2026-01-05\n"), changelog);
+        assertTrue(first.startsWith("## [0.1.0] - 2026-01-01\n"), changelog);
+
+        String breaking = sectionBody(latest, "BREAKING CHANGES");
+        assertTrue(breaking.contains("- drop the legacy widget (HASH)\n  the widget no longer exists\n"), changelog);
+        assertFalse(breaking.contains("gadget"), changelog);
+
+        String deprecated = sectionBody(latest, "Deprecated");
+        assertTrue(
+                deprecated.contains("- replace the gadget (HASH)\n  the gadget goes away next release\n"),
+                changelog
+        );
+        assertFalse(deprecated.contains("widget"), changelog);
+
+        String features = sectionBody(latest, "Features");
+        assertTrue(features.contains("- add the widget ([#12](" + REPO_URL + "/pull/12))\n"), changelog);
+        assertFalse(features.contains("gadget"), "the refactor commit files only under Deprecated:\n" + changelog);
+        assertFalse(features.contains("mend"), changelog);
+
+        String fixes = sectionBody(latest, "Bug Fixes");
+        assertTrue(fixes.contains("- mend the widget (HASH)\n"), changelog);
+        assertFalse(fixes.contains("add the widget"), changelog);
+        assertTrue(changelog.contains("](" + REPO_URL + "/commit/" + fixHash + "))"), changelog);
+
+        assertTrue(sectionBody(first, "Features").contains("- seed the widget (HASH)\n"), changelog);
+        assertFalse(first.contains("mend the widget"), changelog);
+        assertFalse(changelog.contains("start the repository"), "chore commits have no section");
+        assertTrue(latest.contains("[0.2.0]: " + REPO_URL + "/releases/tag/v0.2.0"), changelog);
         assertFalse(changelog.contains("(#12)"), "the pull request reference moves out of the description");
+    }
+
+    @Test
+    void apply__restoresThePreviousFileOnAReusedConfigurationCache(@TempDir Path directory)
+            throws GitAPIException, IOException {
+        // ARRANGE //
+        writeFixture(directory, REPO_URL, """
+
+                foundationChangelog {
+                    initialRelease = file("initial.md")
+                }
+                """);
+        writeHistory(directory);
+        Path initial = Files.writeString(directory.resolve("initial.md"), "## [0.0.1] - earlier\n");
+        GradleRunner runner = runner(directory).withArguments("gitChangelog", "--configuration-cache");
+        runner.build();
+        Path changelog = directory.resolve("CHANGELOG.md");
+        String rendered = Files.readString(changelog);
+        // The file is read when the template renders, so swapping it leaves the cached graph valid.
+        Files.delete(initial);
+        Files.createDirectory(initial);
+
+        // ACT //
+        BuildResult result = runner.buildAndFail();
+
+        // ASSERT //
+        assertTrue(result.getOutput().contains("Reusing configuration cache"), result.getOutput());
+        assertTrue(result.getOutput().contains("did not write"), result.getOutput());
+        assertEquals(rendered, Files.readString(changelog), "the backup survives the cache round trip");
     }
 
     @Test
@@ -157,10 +208,11 @@ class ChangelogPluginTest {
         writeFixture(directory, REPO_URL, """
 
                 foundationChangelog {
-                    initialRelease = file("missing.md")
+                    initialRelease = file("initial.md")
                 }
                 """);
         writeHistory(directory);
+        Files.createDirectory(directory.resolve("initial.md"));
         Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "previous");
 
         // ACT //
@@ -341,6 +393,17 @@ class ChangelogPluginTest {
     }
 
     /**
+     * Returns the text of one release, from its heading to the next release's heading or the end.
+     *
+     * @param changelog the rendered changelog
+     * @param version the release's version, without the brackets
+     * @return the release's heading line and everything under it
+     */
+    private static String releaseBody(String changelog, String version) {
+        return slice(changelog, "## [" + version + "]", "\n## [");
+    }
+
+    /**
      * Returns a runner for a fixture build, with the plugin under test and the git-changelog plugin it
      * applies on the same classpath.
      *
@@ -349,6 +412,33 @@ class ChangelogPluginTest {
      */
     private static GradleRunner runner(Path directory) {
         return GradleRunner.create().withProjectDir(directory.toFile()).withPluginClasspath();
+    }
+
+    /**
+     * Returns the text of one section within a release, from its heading to the next section's heading
+     * or the end.
+     *
+     * @param release the text of one release, as {@link #releaseBody} returns it
+     * @param heading the section's heading, without the leading {@code ###}
+     * @return the section's heading line and everything under it
+     */
+    private static String sectionBody(String release, String heading) {
+        return slice(release, "### " + heading, "\n### ");
+    }
+
+    /**
+     * Cuts a span out of the text, failing the test when its start is missing.
+     *
+     * @param text the text to cut from
+     * @param start the marker the span begins with, which the span includes
+     * @param end the marker the span stops before, or the end of the text when it does not follow
+     * @return the span
+     */
+    private static String slice(String text, String start, String end) {
+        int from = text.indexOf(start);
+        assertTrue(from >= 0, () -> "no " + start + " in:\n" + text);
+        int to = text.indexOf(end, from + start.length());
+        return to < 0 ? text.substring(from) : text.substring(from, to);
     }
 
     /**
