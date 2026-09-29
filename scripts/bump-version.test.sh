@@ -338,6 +338,16 @@ EOF
   assert_changed_files RELEASE.md gradle.properties
 }
 
+case_release_bump_leaves_own_snapshot_plugin_id_at_different_version() {
+  append_file README.md <<'EOF'
+    id "com.example.widgets.gizmo" version "0.0.9-SNAPSHOT"
+EOF
+  bump 0.1.0
+  assert_status 0
+  assert_file_contains README.md 'id "com.example.widgets.gizmo" version "0.0.9-SNAPSHOT"'
+  assert_changed_files README.md gradle.properties
+}
+
 case_release_bump_leaves_foreign_jar_filename() {
   bump 0.1.0
   assert_status 0
@@ -576,6 +586,7 @@ release_bump_rewrites_own_plugin_id_version
 release_bump_leaves_foreign_plugin_id_version
 release_bump_rewrites_snapshot_plugin_id_version
 release_bump_leaves_foreign_snapshot_plugin_id_version
+release_bump_leaves_own_snapshot_plugin_id_at_different_version
 snapshot_bump_leaves_own_plugin_id_version
 snapshot_bump_leaves_snapshot_plugin_id_version
 mixed_release_and_snapshot_line
