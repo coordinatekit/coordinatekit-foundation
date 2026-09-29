@@ -1,3 +1,6 @@
+{{#*inline "entry"}}
+- {{{description this}}}{{#ifMatches (pullRequest this) "[0-9]+"}} ([#{{pullRequest this}}]({{{repoUrl}}}/pull/{{pullRequest this}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
+{{/inline}}
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -14,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 {{#commits}}
 {{#ifCommitBreaking .}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}]({{{repoUrl}}}/pull/{{pullRequest .}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
+{{> entry}}
 {{#eachCommitFooter . tokenMatching="BREAKING[ -]CHANGE"}}
 {{#ifFooterHasValue .}}
   {{{value}}}
@@ -29,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 {{#commits}}
 {{#ifCommitDeprecated .}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}]({{{repoUrl}}}/pull/{{pullRequest .}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
+{{> entry}}
 {{#eachCommitFooter . tokenMatching="DEPRECATED"}}
 {{#ifFooterHasValue .}}
   {{{value}}}
@@ -44,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 {{#commits}}
 {{#ifCommitType . type="feat"}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}]({{{repoUrl}}}/pull/{{pullRequest .}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
+{{> entry}}
 {{/ifCommitType}}
 {{/commits}}
 {{/ifContainsType}}
@@ -54,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 {{#commits}}
 {{#ifCommitType . type="fix"}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}]({{{repoUrl}}}/pull/{{pullRequest .}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
+{{> entry}}
 {{/ifCommitType}}
 {{/commits}}
 {{/ifContainsType}}
@@ -64,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 {{#commits}}
 {{#ifCommitType . type="perf"}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}]({{{repoUrl}}}/pull/{{pullRequest .}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
+{{> entry}}
 {{/ifCommitType}}
 {{/commits}}
 {{/ifContainsType}}
@@ -74,7 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 {{#commits}}
 {{#ifCommitType . type="build"}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}]({{{repoUrl}}}/pull/{{pullRequest .}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
+{{> entry}}
 {{/ifCommitType}}
 {{/commits}}
 {{/ifContainsType}}
@@ -84,7 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 {{#commits}}
 {{#ifCommitType . type="revert"}}
-- {{{description .}}}{{#ifMatches (pullRequest .) "[0-9]+"}} ([#{{pullRequest .}}]({{{repoUrl}}}/pull/{{pullRequest .}})){{else}} ([{{hash}}]({{{repoUrl}}}/commit/{{hashFull}})){{/ifMatches}}
+{{> entry}}
 {{/ifCommitType}}
 {{/commits}}
 {{/ifContainsType}}

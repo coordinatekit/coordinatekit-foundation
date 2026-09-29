@@ -459,7 +459,7 @@ class ChangelogPluginTest {
         String template = ChangelogPlugin.template();
 
         // ASSERT //
-        assertTrue(template.startsWith("# Changelog"));
+        assertTrue(template.contains("\n# Changelog\n"));
         assertTrue(template.contains("{{{repoUrl}}}/releases/tag/"));
         assertFalse(template.contains("__REPO_URL__"));
     }
