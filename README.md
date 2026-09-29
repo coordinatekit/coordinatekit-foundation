@@ -35,7 +35,7 @@ pluginManagement {
 }
 ```
 
-The links are built from `repoUrl` in `gradle.properties`, with no trailing slash. It is the same property the publishing setup here reads for the POM, so a repository that already sets it needs nothing more.
+The links are built from `repoUrl` in `gradle.properties`.
 
 ```groovy
 plugins {

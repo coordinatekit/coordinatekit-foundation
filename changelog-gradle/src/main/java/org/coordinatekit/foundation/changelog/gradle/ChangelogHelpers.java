@@ -37,11 +37,12 @@ import java.util.regex.Pattern;
  * engine.
  */
 final class ChangelogHelpers {
-    /** Matches the trailing {@code (#NN)} that a squash merge appends to a commit's subject. */
-    private static final Pattern DESCRIPTION_PULL_REQUEST_SUFFIX = Pattern.compile("\\s*\\(#\\d+\\)$");
-
-    /** Matches a pull request reference and captures its number. */
-    private static final Pattern PULL_REQUEST = Pattern.compile("\\(#(\\d+)\\)");
+    /**
+     * Matches the trailing {@code (#NN)} that a squash merge appends to a commit's subject and captures
+     * its number. Both {@link #description} and {@link #pullRequest} read the reference through this
+     * pattern, so they cannot disagree about which one is the pull request.
+     */
+    private static final Pattern PULL_REQUEST_SUFFIX = Pattern.compile("\\s*\\(#(\\d+)\\)$");
 
     private ChangelogHelpers() {}
 
@@ -63,16 +64,20 @@ final class ChangelogHelpers {
 
     /**
      * Returns a commit's conventional-commit description with the squash-merge pull request reference
-     * removed, so the template can render that reference as a link of its own.
+     * removed, so the template can render that reference as a link of its own. A subject that is not a
+     * conventional commit, such as the {@code Revert "..."} line {@code git revert} writes, is shown as
+     * written.
      *
      * @param message the full commit message
-     * @return the description after the type and scope prefix, or an empty string when the subject is
-     *         not a conventional commit
+     * @return the description after the type and scope prefix, or the whole subject when it has no such
+     *         prefix
      */
     static String description(String message) {
-        return DESCRIPTION_PULL_REQUEST_SUFFIX.matcher(ConventionalCommitParser.commitDescription(message))
-                .replaceAll("")
-                .trim();
+        String description = ConventionalCommitParser.commitDescription(message);
+        if (description.isBlank()) {
+            description = subject(message);
+        }
+        return PULL_REQUEST_SUFFIX.matcher(description).replaceAll("").trim();
     }
 
     /**
@@ -92,7 +97,7 @@ final class ChangelogHelpers {
                 .anyMatch(commit -> deprecates(commit.getMessage())) ? options.fn() : options.inverse();
         Helper<Commit> ifCommitDeprecated = (commit, options) -> deprecates(commit.getMessage()) ? options.fn()
                 : options.inverse();
-        Helper<Object> repoUrlHelper = (context, options) -> repoUrl.get();
+        Helper<Object> repoUrlHelper = (context, options) -> repoUrl(repoUrl.get());
         Helper<Object> initialReleaseHelper = (context, options) -> initialRelease.isPresent()
                 ? initialRelease(initialRelease.get().getAsFile().toPath())
                 : "";
@@ -128,10 +133,32 @@ final class ChangelogHelpers {
      * can link to the pull request and fall back to the commit hash when a commit landed without one.
      *
      * @param message the full commit message
-     * @return the number after {@code (#}, or an empty string when the message has no reference
+     * @return the number in the subject's trailing {@code (#NN)}, or an empty string when the subject
+     *         has none; a reference in the body or inside the subject does not count
      */
     static String pullRequest(String message) {
-        Matcher matcher = PULL_REQUEST.matcher(message);
+        Matcher matcher = PULL_REQUEST_SUFFIX.matcher(subject(message));
         return matcher.find() ? matcher.group(1) : "";
+    }
+
+    /**
+     * Drops trailing slashes from the repository URL, so the template can append {@code /pull/12}
+     * without doubling the separator.
+     *
+     * @param url the repository URL as configured
+     * @return the URL without trailing slashes
+     */
+    static String repoUrl(String url) {
+        return url.replaceAll("/+$", "");
+    }
+
+    /**
+     * Returns the first line of a commit message.
+     *
+     * @param message the full commit message
+     * @return the subject line without surrounding whitespace
+     */
+    private static String subject(String message) {
+        return message.lines().findFirst().orElse("").strip();
     }
 }

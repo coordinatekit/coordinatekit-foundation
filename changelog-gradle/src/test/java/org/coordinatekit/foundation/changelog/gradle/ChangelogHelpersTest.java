@@ -17,6 +17,7 @@ package org.coordinatekit.foundation.changelog.gradle;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.jknack.handlebars.Helper;
 import org.gradle.api.Project;
@@ -69,6 +70,15 @@ class ChangelogHelpersTest {
      */
     private record PullRequestParameters(String name, String message, String expected) {}
 
+    /**
+     * One configured repository URL and the base the links are built from.
+     *
+     * @param name what the case shows
+     * @param url the URL as configured
+     * @param expected the URL without trailing slashes
+     */
+    private record RepoUrlParameters(String name, String url, String expected) {}
+
     static Stream<DeprecatesParameters> deprecates__footer() {
         return Stream.of(
                 new DeprecatesParameters("upper case footer", "feat: add y\n\nDEPRECATED: use y instead", true),
@@ -100,7 +110,22 @@ class ChangelogHelpersTest {
                 new DescriptionParameters("breaking marker", "feat!: drop thing (#3)", "drop thing"),
                 new DescriptionParameters("no pull request", "fix: repair thing", "repair thing"),
                 new DescriptionParameters("reference mid sentence", "fix: mention (#4) inline", "mention (#4) inline"),
-                new DescriptionParameters("not conventional", "Update the readme", "")
+                new DescriptionParameters("not conventional", "Update the readme", "Update the readme"),
+                new DescriptionParameters(
+                        "git revert subject",
+                        "Revert \"feat: add x\"\n\nThis reverts commit 0123456789abcdef.",
+                        "Revert \"feat: add x\""
+                ),
+                new DescriptionParameters(
+                        "revert of a squash merge",
+                        "revert: feat: add x (#12) (#15)",
+                        "feat: add x (#12)"
+                ),
+                new DescriptionParameters(
+                        "not conventional with pull request",
+                        "Update the readme (#7)",
+                        "Update the readme"
+                )
         );
     }
 
@@ -176,7 +201,7 @@ class ChangelogHelpersTest {
         );
 
         // ACT //
-        repoUrl.set("https://github.com/coordinatekit/crf");
+        repoUrl.set("https://github.com/coordinatekit/crf/");
         Object actual = helper.apply(null, null);
 
         // ASSERT //
@@ -207,14 +232,22 @@ class ChangelogHelpersTest {
         );
 
         // ASSERT //
-        assertEquals(true, thrown.getMessage().contains(missing.toString()));
+        assertTrue(thrown.getMessage().contains(missing.toString()), thrown.getMessage());
     }
 
     static Stream<PullRequestParameters> pullRequest__cases() {
         return Stream.of(
                 new PullRequestParameters("trailing reference", "feat: add thing (#42)", "42"),
                 new PullRequestParameters("no reference", "feat: add thing", ""),
-                new PullRequestParameters("issue without parentheses", "feat: add thing #42", "")
+                new PullRequestParameters("issue without parentheses", "feat: add thing #42", ""),
+                new PullRequestParameters("revert of a squash merge", "revert: feat: add x (#12) (#15)", "15"),
+                new PullRequestParameters(
+                        "reference in the body only",
+                        "fix: repair thing\n\nSee (#3) for context.",
+                        ""
+                ),
+                new PullRequestParameters("reference inside the subject", "fix: mention (#4) inline", ""),
+                new PullRequestParameters("suffix with a body", "fix: repair thing (#8)\n\nSee (#3) for context.", "8")
         );
     }
 
@@ -223,6 +256,36 @@ class ChangelogHelpersTest {
     void pullRequest__cases(PullRequestParameters parameters) {
         // ACT //
         String actual = ChangelogHelpers.pullRequest(parameters.message());
+
+        // ASSERT //
+        assertEquals(parameters.expected(), actual, parameters.name());
+    }
+
+    static Stream<RepoUrlParameters> repoUrl__cases() {
+        return Stream.of(
+                new RepoUrlParameters(
+                        "no trailing slash",
+                        "https://github.com/coordinatekit/crf",
+                        "https://github.com/coordinatekit/crf"
+                ),
+                new RepoUrlParameters(
+                        "one trailing slash",
+                        "https://github.com/coordinatekit/crf/",
+                        "https://github.com/coordinatekit/crf"
+                ),
+                new RepoUrlParameters(
+                        "several trailing slashes",
+                        "https://github.com/coordinatekit/crf//",
+                        "https://github.com/coordinatekit/crf"
+                )
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource
+    void repoUrl__cases(RepoUrlParameters parameters) {
+        // ACT //
+        String actual = ChangelogHelpers.repoUrl(parameters.url());
 
         // ASSERT //
         assertEquals(parameters.expected(), actual, parameters.name());

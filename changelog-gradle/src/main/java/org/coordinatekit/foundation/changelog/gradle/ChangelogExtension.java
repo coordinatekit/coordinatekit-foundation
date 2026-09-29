@@ -55,11 +55,9 @@ public abstract class ChangelogExtension {
     public abstract RegularFileProperty getInitialRelease();
 
     /**
-     * The repository's web address, without a trailing slash, such as
-     * {@code https://github.com/coordinatekit/crf}. The template builds every pull request, commit, and
-     * release link from it. It defaults to the {@code repoUrl} Gradle property, which the publishing
-     * setup already reads for the POM, and a build that sets neither fails when {@code gitChangelog}
-     * runs.
+     * The repository's web address, such as {@code https://github.com/coordinatekit/crf}. The template
+     * builds every pull request, commit, and release link from it. It defaults to the {@code repoUrl}
+     * Gradle property, and a build that sets neither fails when {@code gitChangelog} runs.
      *
      * @return the repository URL the changelog's links point at
      */
