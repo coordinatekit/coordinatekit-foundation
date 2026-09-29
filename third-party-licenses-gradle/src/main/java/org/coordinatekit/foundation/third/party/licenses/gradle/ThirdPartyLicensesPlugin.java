@@ -50,9 +50,10 @@ import java.util.Set;
  * attribution, and under the {@code application} plugin it is added to the main distribution.
  *
  * <p>
- * The plugin reads the {@code runtimeClasspath} configuration, so the {@code java} plugin has to be
- * applied for either task to run. Every license fact, the texts, the allowlist, the overrides, and
- * the copyright notices, stays with the consumer, and the plugin holds only the logic that combines
+ * The plugin reads the {@code runtimeClasspath} configuration, so it registers
+ * {@code generateThirdPartyLicenses} once the {@code java} plugin is applied, in whichever order
+ * the two are applied. Every license fact, the texts, the allowlist, the overrides, and the
+ * copyright notices, stays with the consumer, and the plugin holds only the logic that combines
  * them. The allowlist and the registered licenses are checked against each other when the project
  * is evaluated, so a license that one names and the other lacks fails before any dependency
  * resolves.
@@ -101,8 +102,6 @@ public class ThirdPartyLicensesPlugin implements Plugin<Project> {
             license.getNoticeRequired().convention(false);
         });
 
-        TaskProvider<GenerateThirdPartyLicenses> generate = registerGenerate(project, extension);
-
         project.getPluginManager()
                 .withPlugin(
                         "lifecycle-base",
@@ -110,15 +109,20 @@ public class ThirdPartyLicensesPlugin implements Plugin<Project> {
                                 .named("check")
                                 .configure(check -> check.dependsOn(CHECK_LICENSE_TASK_NAME))
                 );
-        project.getPluginManager()
-                .withPlugin(
-                        "application",
-                        applied -> project.getExtensions()
-                                .getByType(DistributionContainer.class)
-                                .getByName("main")
-                                .getContents()
-                                .from(generate, spec -> spec.include(GenerateThirdPartyLicenses.OUTPUT_FILE_NAME))
-                );
+        // runtimeClasspath exists only once java is applied, so plugin order in the consumer's build
+        // must not matter.
+        project.getPluginManager().withPlugin("java", applied -> {
+            TaskProvider<GenerateThirdPartyLicenses> generate = registerGenerate(project, extension);
+            project.getPluginManager()
+                    .withPlugin(
+                            "application",
+                            distributing -> project.getExtensions()
+                                    .getByType(DistributionContainer.class)
+                                    .getByName("main")
+                                    .getContents()
+                                    .from(generate, spec -> spec.include(GenerateThirdPartyLicenses.OUTPUT_FILE_NAME))
+                    );
+        });
 
         // jk1's extension is a bag of eager fields rather than properties, so it can only be filled
         // once the build script has set ours.

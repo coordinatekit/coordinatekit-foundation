@@ -130,6 +130,26 @@ class ThirdPartyLicensesPluginTest {
     }
 
     @Test
+    void apply__acceptsPluginBeforeJava() {
+        // ARRANGE //
+        Project project = ProjectBuilder.builder().build();
+
+        // ACT //
+        project.getPluginManager().apply(PLUGIN_ID);
+        project.getPluginManager().apply("java");
+
+        // ASSERT //
+        Task check = project.getTasks().getByName("check");
+        assertTrue(
+                check.getTaskDependencies()
+                        .getDependencies(check)
+                        .contains(project.getTasks().getByName("checkLicense")),
+                "check should run checkLicense"
+        );
+        assertEquals("documentation", project.getTasks().getByName("generateThirdPartyLicenses").getGroup());
+    }
+
+    @Test
     void apply__copiesExtensionIntoReport(@TempDir Path directory) throws IOException {
         // ARRANGE //
         Files.writeString(directory.resolve("allowed-licenses.json"), "{\"allowedLicenses\": []}");
