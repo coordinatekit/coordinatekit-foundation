@@ -254,7 +254,7 @@ class ConcordancePluginTest {
      * {@code scaffold} Gradle property is set, so a test chooses the exemption per invocation.
      *
      * <p>
-     * When the test task sets {@code concordance.fixtureJvmArgs}, the fixture also gets a
+     * When the test task sets {@code testKit.fixtureJvmArgs}, the fixture also gets a
      * {@code gradle.properties} passing it to the daemon as {@code org.gradle.jvmargs}. That is how the
      * build records coverage from the fixture builds; without it, as under an IDE's own test runner,
      * the fixture runs the same and records nothing.
@@ -268,7 +268,7 @@ class ConcordancePluginTest {
         Files.createDirectories(sources);
 
         Files.writeString(directory.resolve("settings.gradle"), "rootProject.name = \"fixture\"\n");
-        String jvmArgs = System.getProperty("concordance.fixtureJvmArgs");
+        String jvmArgs = System.getProperty("testKit.fixtureJvmArgs");
         if (jvmArgs != null) {
             Properties properties = new Properties();
             properties.setProperty("org.gradle.jvmargs", jvmArgs);

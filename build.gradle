@@ -1,18 +1,15 @@
 import net.ltgt.gradle.errorprone.CheckSeverity
-import com.github.jknack.handlebars.Helper
 import groovy.xml.XmlSlurper
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import se.bjurr.gitchangelog.internal.semantic.ConventionalCommitParser
-import se.bjurr.gitchangelog.plugin.gradle.HelperParam
 
 plugins {
     alias(libs.plugins.spotless)
     alias(libs.plugins.errorprone)
     id "jacoco"
     id "java-library"
-    alias(libs.plugins.gitchangelog)
     alias(libs.plugins.nmcp.aggregation)
+    id "org.coordinatekit.foundation.changelog"
 }
 
 allprojects {
@@ -22,49 +19,6 @@ allprojects {
     // them.
     repositories {
         mavenCentral()
-    }
-}
-
-gitChangelog {
-    templateContent.set(project.file(".infra/changelog.hbs").text)
-    dateFormat.set("yyyy-MM-dd")
-    file.set(project.file("CHANGELOG.md"))
-
-    // Squash-merged commits carry a trailing "(#NN)" pointing at their pull request. `description`
-    // renders the conventional-commit description with that reference removed, and `pullRequest`
-    // extracts the number so the template can link to the PR (falling back to the commit hash when
-    // a commit landed without one).
-    handlebarsHelpers.add(new HelperParam("description", { commit, options ->
-        ConventionalCommitParser.commitDescription(commit.message).replaceAll(/\s*\(#\d+\)$/, "").trim()
-    } as Helper))
-    handlebarsHelpers.add(new HelperParam("pullRequest", { commit, options ->
-        def matcher = commit.message =~ /\(#(\d+)\)/
-        matcher.find() ? matcher.group(1) : ""
-    } as Helper))
-
-    // A deprecation warns about a removal one or more releases before the break, so it rides along
-    // with the commit that supersedes the API instead of earning a commit type of its own, and is
-    // marked with a `DEPRECATED:` footer on that commit. git-changelog-lib has no predicate for
-    // "carries this footer", so these two supply the pair the template needs, mirroring the built-in
-    // `ifContainsBreaking` and `ifCommitBreaking`.
-    def deprecates = { message ->
-        ConventionalCommitParser.getMessageParts(message as String)?.footers?.any {
-            it.token.equalsIgnoreCase("DEPRECATED")
-        } ?: false
-    }
-    handlebarsHelpers.add(new HelperParam("ifContainsDeprecated", { commits, options ->
-        commits.any { deprecates(it.message) } ? options.fn() : options.inverse()
-    } as Helper))
-    handlebarsHelpers.add(new HelperParam("ifCommitDeprecated", { commit, options ->
-        deprecates(commit.message) ? options.fn() : options.inverse()
-    } as Helper))
-}
-
-tasks.named('gitChangelog') {
-    def changelog = file("CHANGELOG.md")
-    def repoUrl = (findProperty('repoUrl') ?: '') as String
-    doLast {
-        changelog.text = changelog.text.replace('__REPO_URL__', repoUrl)
     }
 }
 
@@ -78,21 +32,27 @@ def codeProjects = subprojects.findAll { it.name != "conventions" }
 // plugin creates its own `pluginMaven` publication from `components.java`, so a module carrying it
 // must not also get the `centralPortal` publication every other module gets, or the same jar would
 // ship twice under one coordinate.
-def pluginProjects = [project(":concordance-gradle")]
+def pluginProjects = [project(":concordance-gradle"), project(":changelog-gradle")]
 
 configure(pluginProjects) {
     apply plugin: "java-gradle-plugin"
 
-    // net.ltgt.gradle:gradle-errorprone-plugin publishes to the Gradle Plugin Portal and not to
-    // Maven Central, so reaching its ErrorProneOptions type needs the portal as a repository. It is
-    // added here rather than to allprojects so that nothing else resolves through the portal's own
-    // mirror of Central, and it never reaches a consumer: the dependency is compileOnly, so it does
-    // not appear in the published POM.
+    // Both plugin modules build on a plugin that publishes to the Gradle Plugin Portal and not to
+    // Maven Central: concordance-gradle reaches net.ltgt.gradle:gradle-errorprone-plugin's
+    // ErrorProneOptions type, and changelog-gradle applies se.bjurr's git-changelog. The portal is
+    // added here rather than to allprojects so that nothing else resolves through its own mirror of
+    // Central. The two differ in what a consumer sees: concordance-gradle's dependency is
+    // compileOnly, so it stays out of the published POM, while changelog-gradle's is
+    // implementation, so it appears there and a consumer's build resolves it from the portal too.
     repositories {
         gradlePluginPortal()
     }
+}
 
-    // The functional test's fixture builds run in TestKit daemons, out of reach of the test JVM's
+// Both plugin modules test against real Gradle builds through TestKit, so they share the fixture
+// wiring below.
+configure(pluginProjects) {
+    // The functional tests' fixture builds run in TestKit daemons, out of reach of the test JVM's
     // JaCoCo agent, and an agent added to the daemon records nothing either: Gradle rewrites a build
     // script's classpath jars and loads its rewritten copy, so the classes an agent instruments are
     // not the ones that run. The fixture builds get a copy of the jar JaCoCo has instrumented
@@ -140,7 +100,7 @@ configure(pluginProjects) {
         outputs.file(fixtureExecutionData).withPropertyName("fixtureExecutionData")
         doFirst { fixtureExecutionData.get().asFile.delete() }
         jvmArgumentProviders.add({
-            ["-Dconcordance.fixtureJvmArgs=-Xbootclasspath/a:${runtime.singleFile} -Djacoco-agent.destfile=${fixtureExecutionData.get().asFile}" as String]
+            ["-DtestKit.fixtureJvmArgs=-Xbootclasspath/a:${runtime.singleFile} -Djacoco-agent.destfile=${fixtureExecutionData.get().asFile}" as String]
         } as CommandLineArgumentProvider)
     }
 
@@ -151,14 +111,17 @@ configure(pluginProjects) {
     // TestKit's withPluginClasspath() defaults to the plugin's class directories, and a directory
     // carries no jar manifest. The plugin reads its own version out of one, so the functional test
     // gets the instrumented jar instead, whose manifest is the published jar's, and exercises the
-    // same path a published plugin takes.
+    // same path a published plugin takes. It is also the jar whose probes record the fixture
+    // coverage, so both modules need it, not only the one that reads its manifest.
     tasks.named("pluginUnderTestMetadata", org.gradle.plugin.devel.tasks.PluginUnderTestMetadata) {
         def instrumentedJar = files(testKitJarDirectory.map { it.asFileTree.matching { include "*.jar" } }) {
             builtBy instrumentTestKitJar
         }
         pluginClasspath.setFrom(instrumentedJar, configurations.runtimeClasspath)
     }
+}
 
+configure(project(":concordance-gradle")) {
     // The functional test's fixture build resolves the check from a flatDir repository rather than
     // from Maven Central, so it needs that module's jar built and needs to be told where it and the
     // versions the fixture pins came from. The jar is declared as an input, not just an ordering
@@ -194,6 +157,7 @@ nmcpAggregation {
 }
 
 dependencies {
+    nmcpAggregation project(":changelog-gradle")
     nmcpAggregation project(":cli-brand")
     nmcpAggregation project(":concordance")
     nmcpAggregation project(":concordance-errorprone")

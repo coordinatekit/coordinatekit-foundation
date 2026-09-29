@@ -1,0 +1,8 @@
+// buildSrc does not see the root build's version catalog, so it imports the same file.
+dependencyResolutionManagement {
+    versionCatalogs {
+        libs {
+            from(files("../gradle/libs.versions.toml"))
+        }
+    }
+}

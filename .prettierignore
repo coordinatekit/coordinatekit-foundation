@@ -1,1 +1,1 @@
-.infra/changelog.hbs
+changelog-gradle/src/main/resources/org/coordinatekit/foundation/changelog/gradle/changelog.hbs

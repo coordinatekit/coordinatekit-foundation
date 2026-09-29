@@ -2,7 +2,7 @@
 
 The base layer CoordinateKit's projects build on. Functionality more than one repository needs is implemented here once and consumed as a published library.
 
-It includes `cli-brand`, the brand banner CoordinateKit's command-line tools print; `conventions`, the Eclipse formatter profile and license header CoordinateKit's Java sources are formatted against; and Concordance, the member-order rule those sources follow, which takes three modules of its own. Every jar comes straight from Maven Central; see [RELEASE.md](RELEASE.md) for how a release ships and how to depend on a `-SNAPSHOT` build instead.
+It includes `cli-brand`, the brand banner CoordinateKit's command-line tools print; `changelog-gradle`, the Gradle plugin that generates `CHANGELOG.md` from conventional commits; `conventions`, the Eclipse formatter profile and license header CoordinateKit's Java sources are formatted against; and Concordance, the member-order rule those sources follow, which takes three modules of its own. Every jar comes straight from Maven Central; see [RELEASE.md](RELEASE.md) for how a release ships and how to depend on a `-SNAPSHOT` build instead.
 
 ## CLI brand
 
@@ -18,6 +18,44 @@ dependencies {
 
 ```java
 System.out.print(new Banner().render(ansiEnabled));
+```
+
+## Changelog
+
+`changelog-gradle` publishes a Gradle plugin, applied under the id `org.coordinatekit.foundation.changelog`, that generates `CHANGELOG.md` from conventional commits. It applies [git-changelog](https://github.com/tomasbjerre/git-changelog-gradle-plugin) and configures its `gitChangelog` task with CoordinateKit's template, which lists Breaking Changes, Deprecated, Features, Bug Fixes, Performance, Build, and Reverts for each release, linking every entry to its pull request or, for a commit that landed without one, to the commit. A squash-merged commit's trailing `(#NN)` becomes the pull request link, and a `DEPRECATED:` footer files a commit under Deprecated.
+
+git-changelog publishes to the Gradle Plugin Portal and this plugin to Maven Central, so `settings.gradle` has to name both among its plugin repositories before the `plugins` block can resolve either:
+
+```groovy
+pluginManagement {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+```
+
+The links are built from `repoUrl` in `gradle.properties`.
+
+```groovy
+plugins {
+    id "org.coordinatekit.foundation.changelog" version "0.2.0"
+}
+```
+
+```properties
+repoUrl=https://github.com/coordinatekit/crf
+```
+
+`./gradlew gitChangelog` then rewrites `CHANGELOG.md` from the whole history. A build that sets no `repoUrl` fails when the task runs. git-changelog itself logs a rendering failure and finishes green, so the plugin deletes the file before the task and fails the build afterwards if the task did not write it, putting the previous file back.
+
+A repository whose earlier releases predate conventional commits starts the changelog after the last of them and carries those releases in a Markdown file that is appended after the generated ones. Both properties are optional:
+
+```groovy
+foundationChangelog {
+    fromRevision = "v0.1.0"
+    initialRelease = file(".infra/changelog_initial_release.md")
+}
 ```
 
 ## Concordance
