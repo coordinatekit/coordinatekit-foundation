@@ -17,17 +17,21 @@ package org.coordinatekit.foundation.third.party.licenses.gradle;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.github.jk1.license.LicenseReportExtension;
 import com.github.jk1.license.filter.LicenseBundleNormalizer;
+import com.github.jk1.license.render.JsonReportRenderer;
 import org.gradle.api.Project;
+import org.gradle.api.Task;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.testfixtures.ProjectBuilder;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 import org.gradle.testkit.runner.TaskOutcome;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -85,7 +89,16 @@ class ThirdPartyLicensesPluginTest {
      * @param license the license name the POM declares, or {@code null} to declare none
      * @param entries the entries to put in the module's jar, by path
      */
-    private record FixtureModule(String artifact, String license, Map<String, String> entries) {}
+    private record FixtureModule(String artifact, @Nullable String license, Map<String, String> entries) {}
+
+    /**
+     * One set of reciprocal labels and the clause they join into.
+     *
+     * @param name what the case shows
+     * @param labels the labels handed to the clause, in any order and possibly repeated
+     * @param expected the clause expected
+     */
+    private record ReciprocalClauseParameters(String name, List<String> labels, String expected) {}
 
     /** The Apache 2.0 license name the fixtures register. */
     private static final String APACHE = "Apache License, Version 2.0";
@@ -138,6 +151,18 @@ class ThirdPartyLicensesPluginTest {
         assertTrue(report.excludeBoms);
         assertEquals(project.file("allowed-licenses.json"), report.allowedLicensesFile);
         assertEquals(1, report.renderers.length);
+        JsonReportRenderer renderer = assertInstanceOf(JsonReportRenderer.class, report.renderers[0]);
+        assertFalse(renderer.getOnlyOneLicensePerModuleCache(), "the task reads every license of a module");
+        assertEquals(directory.toRealPath().resolve("build/reports/dependency-license").toString(), report.outputDir);
+        GenerateThirdPartyLicenses generate = assertInstanceOf(
+                GenerateThirdPartyLicenses.class,
+                project.getTasks().getByName("generateThirdPartyLicenses")
+        );
+        assertEquals(
+                new File(report.outputDir, renderer.getFileNameCache()),
+                generate.getReport().get().getAsFile(),
+                "the task should read the file the renderer writes"
+        );
         assertEquals(1, report.filters.length);
         assertTrue(report.filters[0] instanceof LicenseBundleNormalizer, "expected the bundle normalizer");
     }
@@ -154,7 +179,6 @@ class ThirdPartyLicensesPluginTest {
         extension.getLicenses().register(MIT);
 
         // ASSERT //
-        assertTrue(project.getPlugins().hasPlugin("com.github.jk1.dependency-license-report"));
         assertEquals(project.file("allowed-licenses.json"), extension.getAllowedLicensesFile().get().getAsFile());
         assertEquals(
                 project.file("license-normalizer-bundle.json"),
@@ -168,8 +192,6 @@ class ThirdPartyLicensesPluginTest {
         assertFalse(license.getIncludeNoticeFile().get());
         assertFalse(license.getNoticeRequired().get());
         assertFalse(license.getReciprocalLabel().isPresent());
-        assertTrue(project.getTasks().getByName("check").getDependsOn().contains("checkLicense"));
-        assertEquals("documentation", project.getTasks().getByName("generateThirdPartyLicenses").getGroup());
     }
 
     @Test
@@ -204,6 +226,27 @@ class ThirdPartyLicensesPluginTest {
         assertEquals(0, project.getExtensions().getByType(LicenseReportExtension.class).filters.length);
     }
 
+    @Test
+    void apply__wiresCheckAndDocumentationTasks() {
+        // ARRANGE //
+        Project project = ProjectBuilder.builder().build();
+        project.getPluginManager().apply("java");
+
+        // ACT //
+        project.getPluginManager().apply(PLUGIN_ID);
+
+        // ASSERT //
+        assertTrue(project.getPlugins().hasPlugin("com.github.jk1.dependency-license-report"));
+        Task check = project.getTasks().getByName("check");
+        assertTrue(
+                check.getTaskDependencies()
+                        .getDependencies(check)
+                        .contains(project.getTasks().getByName("checkLicense")),
+                "check should run checkLicense"
+        );
+        assertEquals("documentation", project.getTasks().getByName("generateThirdPartyLicenses").getGroup());
+    }
+
     /**
      * Flattens an exception and everything that caused it into one string. Gradle wraps a failure
      * thrown from {@code afterEvaluate} in a configuration exception, so the message under test is
@@ -225,7 +268,10 @@ class ThirdPartyLicensesPluginTest {
         // ARRANGE //
         writeFixture(
                 directory,
-                List.of(module("apache-lib", APACHE, Map.of()), module("lgpl-lib", LGPL, Map.of())),
+                List.of(
+                        new FixtureModule("apache-lib", APACHE, Map.of()),
+                        new FixtureModule("lgpl-lib", LGPL, Map.of())
+                ),
                 allowlist(Map.of("example:apache-lib", APACHE)),
                 registeredLicenses("")
         );
@@ -246,7 +292,7 @@ class ThirdPartyLicensesPluginTest {
         // ARRANGE //
         writeFixture(
                 directory,
-                List.of(module("mit-lib", MIT, Map.of())),
+                List.of(new FixtureModule("mit-lib", MIT, Map.of())),
                 allowlist(Map.of("example:mit-lib", MIT)),
                 registeredLicenses("")
         );
@@ -266,7 +312,7 @@ class ThirdPartyLicensesPluginTest {
         // ARRANGE //
         writeFixture(
                 directory,
-                List.of(module("bare-lib", null, Map.of())),
+                List.of(new FixtureModule("bare-lib", null, Map.of())),
                 allowlist(Map.of("example:bare-lib", "")),
                 registeredLicenses("")
         );
@@ -287,17 +333,24 @@ class ThirdPartyLicensesPluginTest {
         writeFixture(
                 directory,
                 List.of(
-                        module("apache-lib", APACHE, Map.of("META-INF/NOTICE", "Apache notice line one\nline two\n")),
-                        module("apache-other", APACHE, Map.of()),
-                        module("bare-lib", null, Map.of()),
-                        module("lgpl-lib", LGPL, Map.of()),
-                        module("mit-lib", MIT, Map.of())
+                        new FixtureModule(
+                                "apache-lib",
+                                APACHE,
+                                Map.of("META-INF/NOTICE", "Apache notice line one\nline two\n")
+                        ),
+                        new FixtureModule("apache-other", APACHE, Map.of()),
+                        new FixtureModule("apache-txt", APACHE, Map.of("NOTICE.txt", "Root notice\n")),
+                        new FixtureModule("bare-lib", null, Map.of()),
+                        new FixtureModule("lgpl-lib", LGPL, Map.of()),
+                        new FixtureModule("mit-lib", MIT, Map.of("META-INF/NOTICE", "MIT jar notice\n"))
                 ),
                 allowlist(
                         Map.of(
                                 "example:apache-lib",
                                 APACHE,
                                 "example:apache-other",
+                                APACHE,
+                                "example:apache-txt",
                                 APACHE,
                                 "example:bare-lib",
                                 "",
@@ -329,7 +382,16 @@ class ThirdPartyLicensesPluginTest {
                 attribution.contains("    NOTICE:\n        Apache notice line one\n        line two\n"),
                 "the notice file should be indented under its entry:\n" + attribution
         );
+        assertTrue(
+                attribution.contains("example:apache-txt:1.0 — " + APACHE + "\n    NOTICE:\n        Root notice\n"),
+                "a root-level NOTICE.txt should be read too:\n" + attribution
+        );
         assertFalse(attribution.contains("example:apache-other:1.0 — " + APACHE + "\n    NOTICE"), attribution);
+        assertFalse(
+                attribution.contains("MIT jar notice"),
+                "a notice is copied only under a license with includeNoticeFile:\n" + attribution
+        );
+        assertEquals(2, occurrences(attribution, "    NOTICE:\n"), attribution);
         assertTrue(
                 attribution.contains("(the GNU Lesser General Public License), that separation"),
                 "the reciprocal clause should name the registered label:\n" + attribution
@@ -338,18 +400,6 @@ class ThirdPartyLicensesPluginTest {
             assertEquals(1, occurrences(attribution, text), text + " should appear once:\n" + attribution);
         }
         assertTrue(attribution.endsWith("-".repeat(80) + "\n"), attribution);
-    }
-
-    /**
-     * Makes a fixture module in the {@code example} group.
-     *
-     * @param artifact the artifact id
-     * @param license the license name the POM declares, or {@code null} to declare none
-     * @param entries the entries to put in the jar, by path
-     * @return the module
-     */
-    private static FixtureModule module(String artifact, String license, Map<String, String> entries) {
-        return new FixtureModule(artifact, license, entries);
     }
 
     /**
@@ -391,6 +441,28 @@ class ThirdPartyLicensesPluginTest {
                 .collect(Collectors.joining(", ", "[", "]"));
     }
 
+    @Test
+    void preamble__namesReciprocalClause() {
+        // ACT //
+        String preamble = GenerateThirdPartyLicenses.preamble("the GNU Lesser General Public License");
+
+        // ASSERT //
+        assertTrue(preamble.contains("(the GNU Lesser General Public License), that separation"), preamble);
+        assertTrue(preamble.contains("The corresponding source is available"), preamble);
+    }
+
+    @Test
+    void preamble__omitsSourceSentenceWithoutReciprocalClause() {
+        // ACT //
+        String preamble = GenerateThirdPartyLicenses.preamble("");
+
+        // ASSERT //
+        assertTrue(preamble.contains("separate jar under lib/"), preamble);
+        assertFalse(preamble.contains("()"), preamble);
+        assertFalse(preamble.contains("reciprocal"), preamble);
+        assertFalse(preamble.contains("corresponding source"), preamble);
+    }
+
     /**
      * Reads one file out of the distribution archive the fixture built.
      *
@@ -409,6 +481,41 @@ class ThirdPartyLicensesPluginTest {
                 return new String(contents.readAllBytes(), StandardCharsets.UTF_8);
             }
         }
+    }
+
+    static Stream<ReciprocalClauseParameters> reciprocalClause__cases() {
+        String eclipse = "the Eclipse Public License";
+        String gnu = "the GNU Lesser General Public License";
+        String mozilla = "the Mozilla Public License";
+        return Stream.of(
+                new ReciprocalClauseParameters("no labels", List.of(), ""),
+                new ReciprocalClauseParameters("one label alone", List.of(gnu), gnu),
+                new ReciprocalClauseParameters(
+                        "two labels joined by and",
+                        List.of(gnu, eclipse),
+                        eclipse + " and " + gnu
+                ),
+                new ReciprocalClauseParameters(
+                        "three labels as a serial list",
+                        List.of(mozilla, gnu, eclipse),
+                        eclipse + ", " + gnu + ", and " + mozilla
+                ),
+                new ReciprocalClauseParameters(
+                        "repeated labels named once",
+                        List.of(gnu, eclipse, gnu, eclipse),
+                        eclipse + " and " + gnu
+                )
+        );
+    }
+
+    @MethodSource("reciprocalClause__cases")
+    @ParameterizedTest
+    void reciprocalClause__cases(ReciprocalClauseParameters parameters) {
+        // ACT //
+        String clause = GenerateThirdPartyLicenses.reciprocalClause(parameters.labels());
+
+        // ASSERT //
+        assertEquals(parameters.expected(), clause, parameters.name());
     }
 
     /**

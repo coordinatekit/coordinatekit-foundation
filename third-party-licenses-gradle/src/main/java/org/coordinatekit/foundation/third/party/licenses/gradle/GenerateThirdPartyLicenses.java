@@ -45,6 +45,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -260,7 +261,7 @@ public abstract class GenerateThirdPartyLicenses extends DefaultTask {
      * @param reciprocalClause the clause naming the reciprocal licenses, or an empty string for none
      * @return the paragraph, without a trailing newline
      */
-    private static String preamble(String reciprocalClause) {
+    static String preamble(String reciprocalClause) {
         String preamble = "Each dependency is shipped as a separate jar under lib/ (this distribution builds "
                 + "no fat jar).";
         if (!reciprocalClause.isEmpty()) {
@@ -313,27 +314,39 @@ public abstract class GenerateThirdPartyLicenses extends DefaultTask {
     }
 
     /**
-     * Returns the reciprocal families present among the dependencies as the clause the preamble names
-     * them by: one label alone, two joined by {@code and}, three or more as a serial list. Returns an
-     * empty string when no dependency's license is reciprocal.
+     * Joins reciprocal license labels into the clause the preamble names them by: one label alone, two
+     * joined by {@code and}, three or more as a serial list. Labels are sorted and each is named once.
+     *
+     * @param labels the reciprocal labels of the licenses present, in any order and possibly repeated
+     * @return the clause naming the reciprocal licenses, or an empty string when there are none
+     */
+    static String reciprocalClause(Collection<String> labels) {
+        List<String> sorted = new ArrayList<>(new TreeSet<>(labels));
+        if (sorted.size() <= 2) {
+            return String.join(" and ", sorted);
+        }
+        return String.join(", ", sorted.subList(0, sorted.size() - 1)) + ", and " + sorted.get(sorted.size() - 1);
+    }
+
+    /**
+     * Collects the reciprocal label of each dependency whose license has one.
      *
      * @param dependencies the dependencies being attributed
      * @param definitions the registered licenses by name
-     * @return the clause naming the reciprocal licenses, or an empty string
+     * @return the labels, one per reciprocal dependency
      */
-    private static String reciprocalClause(List<Dependency> dependencies, Map<String, LicenseDefinition> definitions) {
-        TreeSet<String> labels = new TreeSet<>();
+    private static List<String> reciprocalLabels(
+            List<Dependency> dependencies,
+            Map<String, LicenseDefinition> definitions
+    ) {
+        List<String> labels = new ArrayList<>();
         for (Dependency dependency : dependencies) {
             LicenseDefinition definition = definitions.get(dependency.license());
             if (definition != null && definition.getReciprocalLabel().isPresent()) {
                 labels.add(definition.getReciprocalLabel().get());
             }
         }
-        List<String> sorted = new ArrayList<>(labels);
-        if (sorted.size() <= 2) {
-            return String.join(" and ", sorted);
-        }
-        return String.join(", ", sorted.subList(0, sorted.size() - 1)) + ", and " + sorted.get(sorted.size() - 1);
+        return labels;
     }
 
     /**
@@ -350,7 +363,7 @@ public abstract class GenerateThirdPartyLicenses extends DefaultTask {
         builder.append("Third-party license attribution\n").append(HEADING_RULE).append("\n\n");
         builder.append("This distribution bundles the third-party dependencies listed below. Each is shown\n");
         builder.append("with its license; the full license texts follow, one copy per distinct license.\n\n");
-        builder.append(preamble(reciprocalClause(dependencies, definitions))).append("\n\n");
+        builder.append(preamble(reciprocalClause(reciprocalLabels(dependencies, definitions)))).append("\n\n");
 
         for (Dependency dependency : dependencies) {
             // U+2014, escaped so the output does not depend on the compiler's source encoding.
