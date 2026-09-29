@@ -367,7 +367,7 @@ public abstract class GenerateThirdPartyLicenses extends DefaultTask {
 
         for (Dependency dependency : dependencies) {
             // U+2014, escaped so the output does not depend on the compiler's source encoding.
-            builder.append(dependency.gav()).append(" — ").append(dependency.license()).append('\n');
+            builder.append(dependency.gav()).append(" \u2014 ").append(dependency.license()).append('\n');
             if (dependency.notice() != null && !dependency.notice().isEmpty()) {
                 builder.append("    ").append(dependency.notice()).append('\n');
             }

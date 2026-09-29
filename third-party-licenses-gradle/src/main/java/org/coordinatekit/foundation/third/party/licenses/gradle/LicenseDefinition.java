@@ -42,9 +42,11 @@ public abstract class LicenseDefinition implements Named {
     public LicenseDefinition() {}
 
     /**
-     * Whether a dependency under this license has its own {@code NOTICE} file, at
-     * {@code META-INF/NOTICE} or {@code NOTICE} in its jar, reproduced under its entry. Apache License
-     * 2.0 asks for this. A jar without such a file is not an error. {@code false} by default.
+     * Whether a dependency under this license has its own {@code NOTICE} file, read from the jar with
+     * any of these paths (case-insensitive): {@code META-INF/NOTICE}, {@code NOTICE},
+     * {@code META-INF/NOTICE.txt}, {@code NOTICE.txt}, {@code META-INF/NOTICE.md}, or
+     * {@code NOTICE.md}. The first matching entry in jar order is used. Apache License 2.0 asks for
+     * this. A jar without such a file is not an error. {@code false} by default.
      *
      * @return whether to copy each dependency's own notice file into the attribution
      */
