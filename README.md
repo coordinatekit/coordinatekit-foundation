@@ -2,7 +2,7 @@
 
 The base layer CoordinateKit's projects build on. Functionality more than one repository needs is implemented here once and consumed as a published library.
 
-It includes `cli-brand`, the brand banner CoordinateKit's command-line tools print; `changelog-gradle`, the Gradle plugin that generates `CHANGELOG.md` from conventional commits; `conventions`, the Eclipse formatter profile and license header CoordinateKit's Java sources are formatted against; and Concordance, the member-order rule those sources follow, which takes three modules of its own. Every jar comes straight from Maven Central; see [RELEASE.md](RELEASE.md) for how a release ships and how to depend on a `-SNAPSHOT` build instead.
+It includes `cli-brand`, the brand banner CoordinateKit's command-line tools print; `changelog-gradle`, the Gradle plugin that generates `CHANGELOG.md` from conventional commits; `conventions`, the Eclipse formatter profile and license header CoordinateKit's Java sources are formatted against; Concordance, the member-order rule those sources follow, which takes three modules of its own; and two Gradle plugins that aggregate a multi-module build's Javadoc and JaCoCo coverage. Every jar comes straight from Maven Central; see [RELEASE.md](RELEASE.md) for how a release ships and how to depend on a `-SNAPSHOT` build instead.
 
 ## CLI brand
 
@@ -105,6 +105,66 @@ concordance {
 Both lists are empty by default and matched by fully qualified name against resolved types, so nothing is exempt unless a build says so. A field of a scaffolding type, such as a logger, and a method carrying a lifecycle annotation are invisible to the check, and the members on either side of one compare with each other. `severity` is the third property and defaults to `ERROR`, because a build that applies the plugin has adopted the rule; the check's own declared severity is `WARNING`, so it never breaks a build it arrives in unasked.
 
 Two annotations grant the exemptions a build cannot express as configuration, and both require a reason. `@IntentionalOrder(members = {...}, reason = "...")` on a type frees whole categories of its members, for a type whose declaration order carries meaning the alphabet would destroy, such as a width ladder running richest to leanest. `@IgnoreOrder(reason = "...")` on a single member takes it out of the check entirely.
+
+## Aggregate Javadoc and JaCoCo
+
+A multi-module build publishes one set of Javadoc pages and one coverage report, not one per module. Two Gradle plugins register the root project's `aggregateJavadoc` and `aggregateJacocoReport` tasks, so a repository takes the wiring as a plugin instead of copying it into its own build script.
+
+| Module                                                  | What it holds                                                                     |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `org.coordinatekit.foundation:aggregate-javadoc-gradle` | The plugin applied under the id `org.coordinatekit.foundation.aggregate-javadoc`. |
+| `org.coordinatekit.foundation:aggregate-jacoco-gradle`  | The plugin applied under the id `org.coordinatekit.foundation.aggregate-jacoco`.  |
+
+Both plugins publish to Maven Central rather than to the Gradle Plugin Portal, so `settings.gradle` has to name Central among its plugin repositories. The snapshot repository is needed only until 0.3.0 ships:
+
+```groovy
+pluginManagement {
+    repositories {
+        mavenCentral()
+        maven { url = "https://central.sonatype.com/repository/maven-snapshots/" }
+        gradlePluginPortal()
+    }
+}
+```
+
+The root project applies whichever plugins it wants and configures them in a block each:
+
+```groovy
+plugins {
+    id "org.coordinatekit.foundation.aggregate-javadoc" version "0.3.0-SNAPSHOT"
+    id "org.coordinatekit.foundation.aggregate-jacoco" version "0.3.0-SNAPSHOT"
+}
+
+repositories {
+    mavenCentral()
+}
+
+aggregateJavadoc {
+    title = "Example"
+    links = ["https://docs.oracle.com/en/java/javase/21/docs/api/"]
+    wordForms = ["cli": "CLI"]
+}
+
+aggregateJacoco {
+    projects = subprojects.findAll { it.name != "docs" }
+}
+```
+
+Each block has a `projects` property naming the modules the task covers. It defaults to every subproject that applies `java` for Javadoc and every subproject that applies `jacoco` for the coverage report, so the block is only needed to narrow or widen that. `aggregateJavadoc.title` is the one required property, and a build that leaves it out fails at the end of evaluation with a message naming it. `links` and `wordForms` are empty by default.
+
+`aggregateJavadoc` writes to `build/docs/aggregateJavadoc` and fails on any Javadoc warning. Each module gets a tab of its own, so its package has to be the group plus the module name with the dashes turned into dots: `cli-brand` in group `org.example` lives in `org.example.cli.brand`. Javadoc puts a package in the first group whose pattern matches it, so the plugin registers the longest module name first. Without that, the pattern for `concordance` would also claim the packages of `concordance-gradle`. A tab is titled by the module name's segments, each capitalised, and `wordForms` overrides the ones that should not be, such as `cli` for `CLI`.
+
+The task's classpath is the compile classpath of every selected module, so a module the selection depends on is built but not documented. Anything else a build needs on the task goes through `tasks.named`, which defers the configuration until the task is realized:
+
+```groovy
+tasks.named("aggregateJavadoc", Javadoc) {
+    options.addMultilineStringsOption("-add-exports").value = ["jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED"]
+}
+```
+
+The task reads the selection when it is realized, so `tasks.getByName` and `tasks.all` in the root project, which realize it during evaluation, are the calls to avoid.
+
+`aggregateJacocoReport` writes XML and HTML to `build/reports/jacoco/aggregateJacocoReport`. It runs each selected module's `test` task and reads the execution data that module's own `jacocoTestReport` reads, so any extra data file a build adds there reaches the aggregate too. A selected module without a `jacocoTestReport` task fails the build with a message naming it and `aggregateJacoco.projects`. JaCoCo's Ant tasks resolve against the root project's own repositories, which is why the example declares `mavenCentral()` there.
 
 ## Conventions
 

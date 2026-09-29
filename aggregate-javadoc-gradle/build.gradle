@@ -1,0 +1,19 @@
+description = "Gradle plugin that aggregates the Javadoc of a multi-module build into one set of pages."
+
+// The one block outside the description-and-dependencies rule the other modules keep to: a plugin
+// id and its implementation class are this module's identity rather than build wiring, and
+// java-gradle-plugin reads them from here to generate the descriptor and the marker publication.
+gradlePlugin {
+    plugins {
+        aggregateJavadoc {
+            id = "org.coordinatekit.foundation.aggregate-javadoc"
+            implementationClass = "org.coordinatekit.foundation.aggregate.javadoc.gradle.AggregateJavadocPlugin"
+            displayName = "Aggregate Javadoc"
+            description = project.description
+        }
+    }
+}
+
+dependencies {
+    testImplementation gradleTestKit()
+}

@@ -2,6 +2,8 @@ import net.ltgt.gradle.errorprone.CheckSeverity
 import groovy.xml.XmlSlurper
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import org.coordinatekit.foundation.aggregate.jacoco.gradle.AggregateJacocoPlugin
+import org.coordinatekit.foundation.aggregate.javadoc.gradle.AggregateJavadocPlugin
 
 plugins {
     alias(libs.plugins.spotless)
@@ -32,26 +34,33 @@ def codeProjects = subprojects.findAll { it.name != "conventions" }
 // plugin creates its own `pluginMaven` publication from `components.java`, so a module carrying it
 // must not also get the `centralPortal` publication every other module gets, or the same jar would
 // ship twice under one coordinate.
-def pluginProjects = [project(":concordance-gradle"), project(":changelog-gradle")]
+def pluginProjects = [
+        project(":aggregate-jacoco-gradle"),
+        project(":aggregate-javadoc-gradle"),
+        project(":changelog-gradle"),
+        project(":concordance-gradle")
+]
 
-configure(pluginProjects) {
-    apply plugin: "java-gradle-plugin"
-
-    // Both plugin modules build on a plugin that publishes to the Gradle Plugin Portal and not to
-    // Maven Central: concordance-gradle reaches net.ltgt.gradle:gradle-errorprone-plugin's
-    // ErrorProneOptions type, and changelog-gradle applies se.bjurr's git-changelog. The portal is
-    // added here rather than to allprojects so that nothing else resolves through its own mirror of
-    // Central. The two differ in what a consumer sees: concordance-gradle's dependency is
-    // compileOnly, so it stays out of the published POM, while changelog-gradle's is
-    // implementation, so it appears there and a consumer's build resolves it from the portal too.
+// Two plugin modules build on a plugin that publishes to the Gradle Plugin Portal and not to Maven
+// Central: concordance-gradle reaches net.ltgt.gradle:gradle-errorprone-plugin's ErrorProneOptions
+// type, and changelog-gradle applies se.bjurr's git-changelog. The portal is added to those two
+// rather than to allprojects so that nothing else resolves through its own mirror of Central. They
+// differ in what a consumer sees: concordance-gradle's dependency is compileOnly, so it stays out of
+// the published POM, while changelog-gradle's is implementation, so it appears there and a
+// consumer's build resolves it from the portal too. The aggregate plugins need only the Gradle API
+// and JSpecify, so they stay off it.
+configure([project(":changelog-gradle"), project(":concordance-gradle")]) {
     repositories {
         gradlePluginPortal()
     }
 }
 
-// Both plugin modules test against real Gradle builds through TestKit, so they share the fixture
-// wiring below.
 configure(pluginProjects) {
+    apply plugin: "java-gradle-plugin"
+
+    // Every plugin module tests against real Gradle builds through TestKit, so they share the
+    // fixture wiring below.
+    //
     // The functional tests' fixture builds run in TestKit daemons, out of reach of the test JVM's
     // JaCoCo agent, and an agent added to the daemon records nothing either: Gradle rewrites a build
     // script's classpath jars and loads its rewritten copy, so the classes an agent instruments are
@@ -109,10 +118,10 @@ configure(pluginProjects) {
     }
 
     // TestKit's withPluginClasspath() defaults to the plugin's class directories, and a directory
-    // carries no jar manifest. The plugin reads its own version out of one, so the functional test
-    // gets the instrumented jar instead, whose manifest is the published jar's, and exercises the
-    // same path a published plugin takes. It is also the jar whose probes record the fixture
-    // coverage, so both modules need it, not only the one that reads its manifest.
+    // carries no jar manifest. Some plugins read their own version out of one, so the functional
+    // test gets the instrumented jar instead, whose manifest is the published jar's, and exercises
+    // the same path a published plugin takes. It is also the jar whose probes record the fixture
+    // coverage, so every plugin module needs it, not only the ones that read their manifest.
     tasks.named("pluginUnderTestMetadata", org.gradle.plugin.devel.tasks.PluginUnderTestMetadata) {
         def instrumentedJar = files(testKitJarDirectory.map { it.asFileTree.matching { include "*.jar" } }) {
             builtBy instrumentTestKitJar
@@ -157,6 +166,8 @@ nmcpAggregation {
 }
 
 dependencies {
+    nmcpAggregation project(":aggregate-jacoco-gradle")
+    nmcpAggregation project(":aggregate-javadoc-gradle")
     nmcpAggregation project(":changelog-gradle")
     nmcpAggregation project(":cli-brand")
     nmcpAggregation project(":concordance")
@@ -438,68 +449,23 @@ project(":concordance-errorprone") {
     }
 }
 
-tasks.register('aggregateJacocoReport', JacocoReport) {
-    description = "Generate aggregated JaCoCo coverage report for all modules"
-    group = "verification"
+apply plugin: AggregateJacocoPlugin
+apply plugin: AggregateJavadocPlugin
 
-    dependsOn codeProjects*.test
-
-    executionData.from(codeProjects.collect {
-        it.tasks.jacocoTestReport.executionData
-    })
-
-    sourceDirectories.from(codeProjects.collect {
-        it.sourceSets.main.allSource.srcDirs
-    })
-
-    classDirectories.from(codeProjects.collect {
-        it.sourceSets.main.output
-    })
-
-    reports {
-        xml.required = true
-        html.required = true
-    }
+aggregateJacoco {
+    projects = codeProjects
 }
 
-tasks.register('aggregateJavadoc', Javadoc) {
-    description = "Generate aggregated Javadoc for all modules"
-    group = "documentation"
+aggregateJavadoc {
+    projects = codeProjects
+    title = "CoordinateKit Foundation"
+    links = ["https://docs.oracle.com/en/java/javase/21/docs/api/", "https://jspecify.dev/docs/api/"]
+    // Name segments whose display form is not just the segment capitalised.
+    wordForms = ["api": "API", "cli": "CLI", "errorprone": "Error Prone", "jacoco": "JaCoCo"]
+}
 
-    source codeProjects.collect { it.sourceSets.main.allJava }
-    classpath = files(codeProjects.collect { it.sourceSets.main.compileClasspath })
-
-    options {
-        title = "CoordinateKit Foundation ${project.version} API"
-        windowTitle = "CoordinateKit Foundation API"
-        links = [
-                "https://docs.oracle.com/en/java/javase/21/docs/api/",
-                "https://jspecify.dev/docs/api/"
-        ]
-        encoding = "UTF-8"
-        docEncoding = "UTF-8"
-        charSet = "UTF-8"
-
-        // Name segments whose display form is not just the segment capitalised.
-        def wordForms = ["api": "API", "cli": "CLI", "errorprone": "Error Prone"]
-
-        // Each group's pattern ends in `*`, and javadoc puts a package in the first group that
-        // matches it, so a module whose name prefixes another module's would swallow it:
-        // `org.coordinatekit.foundation.concordance*` also matches the errorprone and gradle
-        // packages. Registering the longest name first makes the most specific pattern win.
-        codeProjects.toSorted { -it.name.length() }.each { subproject ->
-            def pkgPattern = "${project.group}.${subproject.name.replace('-', '.')}*"
-            def groupName = subproject.name.split('-')
-                    .collect { wordForms.getOrDefault(it, it.capitalize()) }
-                    .join(' ')
-            //noinspection GroovyAssignabilityCheck, ForeignDelegate
-            group("${groupName} Module", [pkgPattern])
-        }
-
-        addBooleanOption('Werror', true)
-
-        // concordance-errorprone's sources name javac's own AST and symbol types, which the
-        // jdk.compiler module does not export.
-        addMultilineStringsOption("-add-exports").value = javacExports
-    }
+// concordance-errorprone's sources name javac's own AST and symbol types, which the jdk.compiler
+// module does not export.
+tasks.named("aggregateJavadoc", Javadoc) {
+    options.addMultilineStringsOption("-add-exports").value = javacExports
 }
