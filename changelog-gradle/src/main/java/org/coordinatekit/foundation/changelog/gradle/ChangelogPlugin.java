@@ -18,6 +18,7 @@ package org.coordinatekit.foundation.changelog.gradle;
 import org.gradle.api.GradleException;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.file.RegularFile;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
 import org.jspecify.annotations.Nullable;
@@ -87,7 +88,7 @@ public class ChangelogPlugin implements Plugin<Project> {
             task.fromRevision.convention(extension.getFromRevision());
             task.handlebarsHelpers
                     .addAll(ChangelogHelpers.helpers(extension.getRepoUrl(), extension.getInitialRelease()));
-            guard(task, extension.getRepoUrl());
+            guard(task, extension.getRepoUrl(), extension.getInitialRelease());
         });
     }
 
@@ -96,13 +97,23 @@ public class ChangelogPlugin implements Plugin<Project> {
      *
      * @param task the {@code gitChangelog} task
      * @param repoUrl the repository URL, checked before the task runs
+     * @param initialRelease the initial release file, checked before the task runs
      */
-    private static void guard(GitChangelogTask task, Provider<String> repoUrl) {
+    private static void guard(GitChangelogTask task, Provider<String> repoUrl, Provider<RegularFile> initialRelease) {
         // Captured rather than read from the task inside the actions, which the configuration cache
         // would otherwise have to serialize along with the project.
         Property<File> output = task.file;
         AtomicReference<byte @Nullable []> previous = new AtomicReference<>();
-        task.doFirst(first -> previous.set(prepare(repoUrl.getOrNull(), output.get().toPath())));
+        task.doFirst(first -> {
+            RegularFile initial = initialRelease.getOrNull();
+            previous.set(
+                    prepare(
+                            repoUrl.getOrNull(),
+                            initial == null ? null : initial.getAsFile().toPath(),
+                            output.get().toPath()
+                    )
+            );
+        });
         task.doLast(last -> verify(output.get().toPath(), previous.get()));
     }
 
@@ -111,15 +122,24 @@ public class ChangelogPlugin implements Plugin<Project> {
      * git-changelog would otherwise leave the previous file where {@link #verify} looks.
      *
      * @param repoUrl the repository URL, or {@code null} when none is configured
+     * @param initialRelease the file appended after the last release, or {@code null} when none is
+     *        configured
      * @param changelog where the task writes the changelog
      * @return the file's previous content, or {@code null} when it did not exist
-     * @throws GradleException if {@code repoUrl} is missing or blank, or the file cannot be replaced
+     * @throws GradleException if {@code repoUrl} is missing or blank, {@code initialRelease} is set but
+     *         does not exist, or the file cannot be replaced
      */
-    static byte @Nullable [] prepare(@Nullable String repoUrl, Path changelog) {
+    static byte @Nullable [] prepare(@Nullable String repoUrl, @Nullable Path initialRelease, Path changelog) {
         if (repoUrl == null || repoUrl.isBlank()) {
             throw new GradleException(
                     "foundationChangelog needs a repository URL for its links. Add repoUrl=https://github.com/<owner>/<repo>"
                             + " to gradle.properties, or set foundationChangelog.repoUrl."
+            );
+        }
+        if (initialRelease != null && !Files.exists(initialRelease)) {
+            throw new GradleException(
+                    "foundationChangelog.initialRelease points at " + initialRelease
+                            + ", which does not exist. Create the file or remove the setting."
             );
         }
         try {

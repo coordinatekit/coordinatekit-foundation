@@ -97,6 +97,27 @@ class ChangelogPluginTest {
     }
 
     @Test
+    void apply__failsUpFrontWhenInitialReleaseIsMissing(@TempDir Path directory) throws GitAPIException, IOException {
+        // ARRANGE //
+        writeFixture(directory, REPO_URL, """
+
+                foundationChangelog {
+                    initialRelease = file("initial.md")
+                }
+                """);
+        writeHistory(directory);
+        Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "previous");
+
+        // ACT //
+        BuildResult result = runner(directory).withArguments("gitChangelog").buildAndFail();
+
+        // ASSERT //
+        assertTrue(result.getOutput().contains("foundationChangelog.initialRelease points at"), result.getOutput());
+        assertFalse(result.getOutput().contains("did not write"), result.getOutput());
+        assertEquals("previous", Files.readString(changelog), "the changelog is untouched");
+    }
+
+    @Test
     void apply__failsWithoutRepoUrl(@TempDir Path directory) throws IOException {
         // ARRANGE //
         writeFixture(directory, null, "");
@@ -359,11 +380,28 @@ class ChangelogPluginTest {
         // ACT //
         GradleException thrown = assertThrows(
                 GradleException.class,
-                () -> ChangelogPlugin.prepare(parameters.repoUrl(), changelog)
+                () -> ChangelogPlugin.prepare(parameters.repoUrl(), null, changelog)
         );
 
         // ASSERT //
         assertTrue(thrown.getMessage().contains("repoUrl="), thrown.getMessage());
+        assertEquals("kept", Files.readString(changelog), "a rejected run leaves the file alone");
+    }
+
+    @Test
+    void prepare__missingInitialRelease(@TempDir Path directory) throws IOException {
+        // ARRANGE //
+        Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "kept");
+        Path initialRelease = directory.resolve("initial.md");
+
+        // ACT //
+        GradleException thrown = assertThrows(
+                GradleException.class,
+                () -> ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", initialRelease, changelog)
+        );
+
+        // ASSERT //
+        assertTrue(thrown.getMessage().contains(initialRelease.toString()), thrown.getMessage());
         assertEquals("kept", Files.readString(changelog), "a rejected run leaves the file alone");
     }
 
@@ -373,7 +411,7 @@ class ChangelogPluginTest {
         Path changelog = directory.resolve("CHANGELOG.md");
 
         // ACT //
-        byte[] previous = ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", changelog);
+        byte[] previous = ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, changelog);
 
         // ASSERT //
         assertNull(previous);
@@ -385,7 +423,7 @@ class ChangelogPluginTest {
         Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "old");
 
         // ACT //
-        byte[] previous = ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", changelog);
+        byte[] previous = ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, changelog);
 
         // ASSERT //
         assertArrayEquals("old".getBytes(StandardCharsets.UTF_8), previous);
