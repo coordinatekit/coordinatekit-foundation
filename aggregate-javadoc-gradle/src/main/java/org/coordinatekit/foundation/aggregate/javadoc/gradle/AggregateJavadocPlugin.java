@@ -42,6 +42,11 @@ import java.util.stream.Collectors;
  * {@code build/docs/aggregateJavadoc}, and the task fails on any Javadoc warning.
  *
  * <p>
+ * The plugin applies {@link JavaBasePlugin} to the root project so the Javadoc tool comes from the
+ * root's {@link org.gradle.jvm.toolchain.JavaToolchainService toolchain}. A consumer that sets a
+ * toolchain only in {@code subprojects { }} will run the task with the daemon's JDK instead.
+ *
+ * <p>
  * Each selected project gets a tab of its own. A project's package is the build's group plus its
  * name with the dashes turned into dots, so {@code cli-brand} in group {@code org.example} is
  * documented under {@code org.example.cli.brand}. Javadoc puts a package in the first group whose
@@ -116,8 +121,6 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
     private static void configure(Project project, AggregateJavadocExtension extension, Javadoc task) {
         task.setDescription("Generates the Javadoc of every selected module as one set of pages.");
         task.setGroup(JavaBasePlugin.DOCUMENTATION_GROUP);
-        // JavaBasePlugin defaults every Javadoc task to build/docs/javadoc, the root project's own
-        // javadoc task included.
         task.setDestinationDir(
                 new File(project.getLayout().getBuildDirectory().get().getAsFile(), "docs/" + TASK_NAME)
         );
@@ -167,11 +170,7 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
     static Map<String, String> groups(String group, Collection<String> moduleNames, Map<String, String> wordForms) {
         Map<String, String> groups = new LinkedHashMap<>();
         moduleNames.stream()
-                .sorted(
-                        Comparator.<String>comparingInt(String::length)
-                                .reversed()
-                                .thenComparing(Comparator.naturalOrder())
-                )
+                .sorted(Comparator.comparingInt(String::length).reversed().thenComparing(Comparator.naturalOrder()))
                 .forEach(
                         name -> groups
                                 .put(label(name, wordForms) + " Module", group + "." + name.replace('-', '.') + "*")

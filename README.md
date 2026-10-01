@@ -115,13 +115,12 @@ A multi-module build publishes one set of Javadoc pages and one coverage report,
 | `org.coordinatekit.foundation:aggregate-javadoc-gradle` | The plugin applied under the id `org.coordinatekit.foundation.aggregate-javadoc`. |
 | `org.coordinatekit.foundation:aggregate-jacoco-gradle`  | The plugin applied under the id `org.coordinatekit.foundation.aggregate-jacoco`.  |
 
-Both plugins publish to Maven Central rather than to the Gradle Plugin Portal, so `settings.gradle` has to name Central among its plugin repositories. The snapshot repository is needed only until 0.3.0 ships:
+Both plugins publish to Maven Central rather than to the Gradle Plugin Portal, so `settings.gradle` has to name Central among its plugin repositories. For `-SNAPSHOT` versions, see [RELEASE.md](RELEASE.md#consuming-snapshots):
 
 ```groovy
 pluginManagement {
     repositories {
         mavenCentral()
-        maven { url = "https://central.sonatype.com/repository/maven-snapshots/" }
         gradlePluginPortal()
     }
 }
@@ -162,7 +161,7 @@ tasks.named("aggregateJavadoc", Javadoc) {
 }
 ```
 
-The task reads the selection when it is realized, so `tasks.getByName` and `tasks.all` in the root project, which realize it during evaluation, are the calls to avoid.
+The task reads the selection when it is realized, so `tasks.getByName` and `tasks.all` in the root project, which realize it during evaluation, are the calls to avoid. The Javadoc tool comes from the root project's toolchain, so a build that sets a toolchain only in `subprojects { }` will run the task with the daemon's JDK.
 
 `aggregateJacocoReport` writes XML and HTML to `build/reports/jacoco/aggregateJacocoReport`. It runs each selected module's `test` task and reads the execution data that module's own `jacocoTestReport` reads, so any extra data file a build adds there reaches the aggregate too. A selected module without a `jacocoTestReport` task fails the build with a message naming it and `aggregateJacoco.projects`. JaCoCo's Ant tasks resolve against the root project's own repositories, which is why the example declares `mavenCentral()` there.
 
