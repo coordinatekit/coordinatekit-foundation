@@ -111,6 +111,15 @@ configure(pluginProjects) {
         jvmArgumentProviders.add({
             ["-DtestKit.fixtureJvmArgs=-Xbootclasspath/a:${runtime.singleFile} -Djacoco-agent.destfile=${fixtureExecutionData.get().asFile}" as String]
         } as CommandLineArgumentProvider)
+
+        // A build that git starts, as the pre-commit hook's check does, inherits GIT_DIR,
+        // GIT_INDEX_FILE, and their kin, and JGit reads them in place of the directory it is given.
+        // ChangelogPluginTest's fixture repository would then stage and commit into this repository's
+        // own index, and the TestKit daemons, which inherit the test JVM's environment, would read
+        // its history. Stripped at execution so a reused configuration cache entry cannot carry them.
+        doFirst { task ->
+            task.environment = task.environment.findAll { !it.key.startsWith("GIT_") }
+        }
     }
 
     tasks.withType(JacocoReport).configureEach {
