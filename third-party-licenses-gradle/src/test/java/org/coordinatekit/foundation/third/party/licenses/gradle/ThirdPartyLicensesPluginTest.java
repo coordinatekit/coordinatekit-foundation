@@ -83,6 +83,15 @@ class ThirdPartyLicensesPluginTest {
     private record AllowlistParameters(String name, String allowlist, List<String> expected) {}
 
     /**
+     * One allowlist that cannot be read as one, and the part of the message that says why.
+     *
+     * @param name what the case shows
+     * @param allowlist the allowlist file contents
+     * @param expectedMessage text the failure message contains
+     */
+    private record MalformedAllowlistParameters(String name, String allowlist, String expectedMessage) {}
+
+    /**
      * One module the fixture repository serves.
      *
      * @param artifact the artifact id, under the group {@code example}
@@ -591,7 +600,46 @@ class ThirdPartyLicensesPluginTest {
                         "{\"allowedLicenses\": [{\"moduleName\": \"a:a\", \"moduleLicense\": \"\"}]}",
                         List.of()
                 ),
-                new AllowlistParameters("no allowedLicenses key", "{" + comment + "\"other\": []}", List.of())
+                new AllowlistParameters("no allowedLicenses key", "{" + comment + "\"other\": []}", List.of()),
+                new AllowlistParameters("lenient syntax the report accepts", """
+                        {
+                            // a comment
+                            allowedLicenses: [
+                                {moduleName: 'a:a', moduleLicense: 'MIT License'},
+                                {moduleName: 'b:b', moduleLicense: 'Weird License'}
+                            ],
+                        }
+                        """, List.of("b:b (Weird License)")),
+                new AllowlistParameters(
+                        "match-anything rule",
+                        "{\"allowedLicenses\": [{\"moduleName\": \"a.*\", \"moduleLicense\": \".*\"}]}",
+                        List.of()
+                ),
+                new AllowlistParameters(
+                        "pattern rule that matches a registered name in full",
+                        "{\"allowedLicenses\": [{\"moduleName\": \"a:a\", \"moduleLicense\": \"Apache.*\"}]}",
+                        List.of()
+                ),
+                new AllowlistParameters(
+                        "pattern rule that matches only part of a registered name",
+                        "{\"allowedLicenses\": [{\"moduleName\": \"a:a\", \"moduleLicense\": \"Apache\"}]}",
+                        List.of("a:a (Apache)")
+                ),
+                new AllowlistParameters(
+                        "pattern rule that matches no registered name",
+                        "{\"allowedLicenses\": [{\"moduleName\": \"a:a\", \"moduleLicense\": \"BSD.*\"}]}",
+                        List.of("a:a (BSD.*)")
+                ),
+                new AllowlistParameters(
+                        "rule that is not a valid expression",
+                        "{\"allowedLicenses\": [{\"moduleName\": \"a:a\", \"moduleLicense\": \"Apache (\"}]}",
+                        List.of("a:a (Apache ()")
+                ),
+                new AllowlistParameters(
+                        "rule without a moduleLicense",
+                        "{\"allowedLicenses\": [{\"moduleName\": \"a:a\"}]}",
+                        List.of()
+                )
         );
     }
 
@@ -604,6 +652,37 @@ class ThirdPartyLicensesPluginTest {
 
         // ASSERT //
         assertEquals(parameters.expected(), unregistered, parameters.name());
+    }
+
+    static Stream<MalformedAllowlistParameters> unregisteredAllowedLicenses__malformed() {
+        return Stream.of(
+                new MalformedAllowlistParameters("not JSON", "{\"allowedLicenses\": [", "not valid JSON"),
+                new MalformedAllowlistParameters("top level is a list", "[]", "top level is not an object"),
+                new MalformedAllowlistParameters(
+                        "allowedLicenses is an object",
+                        "{\"allowedLicenses\": {}}",
+                        "allowedLicenses is not a list"
+                ),
+                new MalformedAllowlistParameters(
+                        "entry is a string",
+                        "{\"allowedLicenses\": [\"MIT License\"]}",
+                        "entry that is not an object"
+                )
+        );
+    }
+
+    @MethodSource("unregisteredAllowedLicenses__malformed")
+    @ParameterizedTest
+    void unregisteredAllowedLicenses__malformed(MalformedAllowlistParameters parameters) {
+        // ACT //
+        IllegalArgumentException thrown = assertThrows(
+                IllegalArgumentException.class,
+                () -> ThirdPartyLicensesPlugin.unregisteredAllowedLicenses(parameters.allowlist(), Set.of(MIT, APACHE)),
+                parameters.name()
+        );
+
+        // ASSERT //
+        assertTrue(thrown.getMessage().contains(parameters.expectedMessage()), thrown.getMessage());
     }
 
     /**

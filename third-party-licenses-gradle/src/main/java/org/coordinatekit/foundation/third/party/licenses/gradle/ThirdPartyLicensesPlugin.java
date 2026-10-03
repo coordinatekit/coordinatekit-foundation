@@ -21,6 +21,8 @@ import com.github.jk1.license.filter.DependencyFilter;
 import com.github.jk1.license.filter.LicenseBundleNormalizer;
 import com.github.jk1.license.render.JsonReportRenderer;
 import com.github.jk1.license.render.ReportRenderer;
+import groovy.json.JsonException;
+import groovy.json.JsonParserType;
 import groovy.json.JsonSlurper;
 import org.gradle.api.GradleException;
 import org.gradle.api.Plugin;
@@ -39,6 +41,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * Checks a build's runtime dependency licenses and renders the attribution file that ships with its
@@ -156,6 +160,28 @@ public class ThirdPartyLicensesPlugin implements Plugin<Project> {
     }
 
     /**
+     * Returns whether an allowlist rule can be satisfied by a registered license, by the license
+     * report's own test: {@code .*} always, otherwise a registered name that equals the rule or that
+     * the rule matches in full as a regular expression. A rule that is not a valid expression can only
+     * match literally, as it could not in the report either.
+     *
+     * @param rule an allowlist {@code moduleLicense}
+     * @param registered the names of the registered licenses
+     * @return whether some registered license satisfies the rule
+     */
+    private static boolean isRegistered(String rule, Set<String> registered) {
+        if (rule.equals(".*") || registered.contains(rule)) {
+            return true;
+        }
+        try {
+            Pattern pattern = Pattern.compile(rule);
+            return registered.stream().anyMatch(name -> pattern.matcher(name).matches());
+        } catch (PatternSyntaxException e) {
+            return false;
+        }
+    }
+
+    /**
      * Registers the task that renders the attribution, wired to the license report's output and to the
      * runtime classpath by name, so nothing resolves until the task runs.
      *
@@ -209,7 +235,12 @@ public class ThirdPartyLicensesPlugin implements Plugin<Project> {
         } catch (IOException e) {
             throw new UncheckedIOException("Cannot read " + allowlist, e);
         }
-        List<String> unregistered = unregisteredAllowedLicenses(json, extension.getLicenses().getNames());
+        List<String> unregistered;
+        try {
+            unregistered = unregisteredAllowedLicenses(json, extension.getLicenses().getNames());
+        } catch (IllegalArgumentException e) {
+            throw new GradleException("Cannot read " + allowlist.getName() + ": " + e.getMessage(), e);
+        }
         if (!unregistered.isEmpty()) {
             throw new GradleException(
                     allowlist.getName() + " allows licenses that are not registered in thirdPartyLicenses.licenses: "
@@ -221,24 +252,44 @@ public class ThirdPartyLicensesPlugin implements Plugin<Project> {
 
     /**
      * Returns the licenses an allowlist names that no registered license matches, each with the module
-     * that names it. An empty {@code moduleLicense} is skipped, because it is the report's rule for a
-     * dependency whose POM declares no license, and an override supplies the real one.
+     * that names it. The file is read the way the license report's {@code checkLicense} reads it:
+     * leniently parsed, and each {@code moduleLicense} taken as a regular expression that has to match
+     * a whole name, with {@code .*} accepted outright. An empty {@code moduleLicense} is skipped,
+     * because it is the report's rule for a dependency whose POM declares no license, and an override
+     * supplies the real one.
      *
      * @param allowlistJson the contents of the allowlist file
      * @param registered the names of the registered licenses
-     * @return one {@code module (license)} entry for each allowlisted license that is not registered
+     * @return one {@code module (license)} entry for each allowlisted license that no registered name
+     *         satisfies
+     * @throws IllegalArgumentException if the contents do not parse, or are not an object whose
+     *         {@code allowedLicenses} is a list of objects
      */
     static List<String> unregisteredAllowedLicenses(String allowlistJson, Set<String> registered) {
-        Object allowlist = new JsonSlurper().parseText(allowlistJson);
-        Object entries = ((Map<?, ?>) allowlist).get("allowedLicenses");
+        Object allowlist;
+        try {
+            allowlist = new JsonSlurper().setType(JsonParserType.LAX).parseText(allowlistJson);
+        } catch (JsonException e) {
+            throw new IllegalArgumentException("it is not valid JSON: " + e.getMessage(), e);
+        }
+        if (!(allowlist instanceof Map<?, ?> root)) {
+            throw new IllegalArgumentException("its top level is not an object");
+        }
+        Object entries = root.get("allowedLicenses");
         List<String> unregistered = new ArrayList<>();
-        if (entries instanceof List<?> list) {
-            for (Object entry : list) {
-                Map<?, ?> allowed = (Map<?, ?>) entry;
-                if (allowed.get("moduleLicense")instanceof String license && !license.isEmpty()
-                        && !registered.contains(license)) {
-                    unregistered.add(allowed.get("moduleName") + " (" + license + ")");
-                }
+        if (entries == null) {
+            return unregistered;
+        }
+        if (!(entries instanceof List<?> list)) {
+            throw new IllegalArgumentException("allowedLicenses is not a list");
+        }
+        for (Object entry : list) {
+            if (!(entry instanceof Map<?, ?> allowed)) {
+                throw new IllegalArgumentException("allowedLicenses holds an entry that is not an object: " + entry);
+            }
+            if (allowed.get("moduleLicense")instanceof String license && !license.isEmpty()
+                    && !isRegistered(license, registered)) {
+                unregistered.add(allowed.get("moduleName") + " (" + license + ")");
             }
         }
         return unregistered;
