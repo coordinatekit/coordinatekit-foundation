@@ -84,7 +84,7 @@ class AggregateJavadocPluginTest {
             .compile("<button id=\"all-packages-table-tab(\\d+)\"[^>]*>([^<]*)</button>");
 
     @Test
-    void apply__configuresTaskFromExtension() {
+    void apply__configuresTaskFromExtension(@TempDir Path directory) throws IOException {
         // ARRANGE //
         Project project = ProjectBuilder.builder().build();
         project.setGroup("org.example");
@@ -97,21 +97,29 @@ class AggregateJavadocPluginTest {
         AggregateJavadocExtension extension = project.getExtensions().getByType(AggregateJavadocExtension.class);
         extension.getTitle().set("Example");
         extension.getProjects().set(Set.of(a, project.project(":a-b")));
+        extension.getLinks().set(List.of("https://docs.example.org/api/"));
+        extension.getWordForms().set(Map.of("b", "Bee"));
 
         // ACT //
         Javadoc task = (Javadoc) project.getTasks().getByName("aggregateJavadoc");
         StandardJavadocDocletOptions options = (StandardJavadocDocletOptions) task.getOptions();
+        Path optionFile = directory.resolve("javadoc.options");
+        options.write(optionFile.toFile());
 
         // ASSERT //
         assertEquals("documentation", task.getGroup());
         assertEquals("aggregateJavadoc", task.getDestinationDir().getName());
-        assertTrue(task.getTitle().contains("Example"), task.getTitle());
-        assertTrue(task.getTitle().contains("1.2.3"), task.getTitle());
-        assertTrue(options.getWindowTitle().endsWith(" API"), options.getWindowTitle());
+        assertEquals("Example 1.2.3 API", task.getTitle());
+        assertEquals("Example API", options.getWindowTitle());
+        assertEquals(List.of("https://docs.example.org/api/"), options.getLinks());
         assertEquals("UTF-8", options.getEncoding());
         assertEquals("UTF-8", options.getDocEncoding());
         assertEquals("UTF-8", options.getCharSet());
-        assertEquals(List.of("A B Module", "A Module"), List.copyOf(options.getGroups().keySet()));
+        assertTrue(
+                Files.readAllLines(optionFile).stream().map(String::strip).anyMatch("-Werror"::equals),
+                Files.readString(optionFile)
+        );
+        assertEquals(List.of("A Bee Module", "A Module"), List.copyOf(options.getGroups().keySet()));
         assertTrue(
                 task.getTaskDependencies()
                         .getDependencies(task)
