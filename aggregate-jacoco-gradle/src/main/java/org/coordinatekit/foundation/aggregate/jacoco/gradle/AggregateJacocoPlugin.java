@@ -15,17 +15,17 @@
  */
 package org.coordinatekit.foundation.aggregate.jacoco.gradle;
 
+import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
-import org.gradle.api.UnknownTaskException;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.tasks.SourceSet;
-import org.gradle.api.tasks.TaskProvider;
 import org.gradle.language.base.plugins.LifecycleBasePlugin;
 import org.gradle.testing.jacoco.plugins.JacocoPlugin;
 import org.gradle.testing.jacoco.tasks.JacocoReport;
 
-import java.util.Set;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
@@ -37,8 +37,9 @@ import java.util.stream.Collectors;
  * <p>
  * The task runs each selected project's {@code test} task and reads the execution data that
  * project's own {@code jacocoTestReport} reads, so any extra data a build adds there reaches the
- * aggregate too. A selected project without a {@code jacocoTestReport} task fails the build with a
- * message that names the project.
+ * aggregate too. A selected project that lacks the {@code java} plugin or a
+ * {@code jacocoTestReport} task fails the build with an {@link InvalidUserDataException} that names
+ * the project.
  *
  * <p>
  * Applying this plugin also applies {@code jacoco} to the root project, which supplies the Ant
@@ -53,6 +54,9 @@ public class AggregateJacocoPlugin implements Plugin<Project> {
 
     /** The id of the plugin whose projects are selected by default. */
     private static final String JACOCO_PLUGIN_ID = "jacoco";
+
+    /** The id of the plugin every selected project has to apply for its main source set to exist. */
+    private static final String JAVA_PLUGIN_ID = "java";
 
     /** The name of the task that generates the report. */
     private static final String TASK_NAME = "aggregateJacocoReport";
@@ -91,7 +95,7 @@ public class AggregateJacocoPlugin implements Plugin<Project> {
         task.setDescription("Generates one JaCoCo coverage report for every selected module.");
         task.setGroup(LifecycleBasePlugin.VERIFICATION_GROUP);
 
-        Callable<Set<Project>> selected = () -> extension.getProjects().get();
+        Callable<List<Project>> selected = () -> selection(extension);
         task.dependsOn(
                 (Callable<Object>) () -> selected.call()
                         .stream()
@@ -129,21 +133,9 @@ public class AggregateJacocoPlugin implements Plugin<Project> {
      *
      * @param project a project selected for the aggregate report
      * @return the project's {@code jacocoTestReport} task
-     * @throws UnknownTaskException if the project has none
      */
     private static JacocoReport jacocoTestReport(Project project) {
-        TaskProvider<JacocoReport> report;
-        try {
-            report = project.getTasks().named("jacocoTestReport", JacocoReport.class);
-        } catch (UnknownTaskException e) {
-            throw new UnknownTaskException(
-                    "Project " + project.getPath() + " is selected for " + TASK_NAME + " but has no"
-                            + " jacocoTestReport task. Apply the " + JACOCO_PLUGIN_ID + " and java plugins to it,"
-                            + " or leave it out of " + EXTENSION_NAME + ".projects.",
-                    e
-            );
-        }
-        return report.get();
+        return project.getTasks().named("jacocoTestReport", JacocoReport.class).get();
     }
 
     /**
@@ -157,5 +149,39 @@ public class AggregateJacocoPlugin implements Plugin<Project> {
                 .getByType(JavaPluginExtension.class)
                 .getSourceSets()
                 .getByName(SourceSet.MAIN_SOURCE_SET_NAME);
+    }
+
+    /**
+     * Reads the selected projects in path order, so the task's inputs do not depend on the iteration
+     * order of the underlying set.
+     *
+     * @param extension the block the build configured
+     * @return the selected projects, sorted by path
+     * @throws InvalidUserDataException if a selected project does not apply the {@code java} plugin or
+     *         has no {@code jacocoTestReport} task
+     */
+    private static List<Project> selection(AggregateJacocoExtension extension) {
+        List<Project> selected = extension.getProjects()
+                .get()
+                .stream()
+                .sorted(Comparator.comparing(Project::getPath))
+                .toList();
+        for (Project selectedProject : selected) {
+            if (!selectedProject.getPlugins().hasPlugin(JAVA_PLUGIN_ID)) {
+                throw new InvalidUserDataException(
+                        "Project " + selectedProject.getPath() + " is selected for " + TASK_NAME + " but does not"
+                                + " apply the " + JAVA_PLUGIN_ID + " plugin. Apply it, or leave the project out of "
+                                + EXTENSION_NAME + ".projects."
+                );
+            }
+            if (!selectedProject.getTasks().getNames().contains("jacocoTestReport")) {
+                throw new InvalidUserDataException(
+                        "Project " + selectedProject.getPath() + " is selected for " + TASK_NAME + " but has no"
+                                + " jacocoTestReport task. Apply the " + JACOCO_PLUGIN_ID + " and java plugins to it,"
+                                + " or leave it out of " + EXTENSION_NAME + ".projects."
+                );
+            }
+        }
+        return selected;
     }
 }

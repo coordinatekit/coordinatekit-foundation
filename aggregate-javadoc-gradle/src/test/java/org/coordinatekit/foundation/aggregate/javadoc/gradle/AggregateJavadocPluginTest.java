@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import org.coordinatekit.foundation.aggregate.javadoc.gradle.AggregateJavadocPlugin.Module;
 import org.gradle.api.Project;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.tasks.javadoc.Javadoc;
@@ -39,7 +40,9 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -65,13 +68,13 @@ class AggregateJavadocPluginTest {
      * One set of module names and the group labels it should produce, in order.
      *
      * @param name what the case shows
-     * @param modules the module names, in the order they are passed in
+     * @param modules the modules, in the order they are passed in
      * @param wordForms the display forms passed in
      * @param expected the labels, in registration order
      */
     private record GroupsParameters(
             String name,
-            List<String> modules,
+            List<Module> modules,
             Map<String, String> wordForms,
             List<String> expected
     ) {}
@@ -149,6 +152,24 @@ class AggregateJavadocPluginTest {
     }
 
     @Test
+    void apply__failsForProjectWithoutJava() {
+        // ARRANGE //
+        Project project = ProjectBuilder.builder().build();
+        Project plain = ProjectBuilder.builder().withName("plain").withParent(project).build();
+        project.getPluginManager().apply(PLUGIN_ID);
+        AggregateJavadocExtension extension = project.getExtensions().getByType(AggregateJavadocExtension.class);
+        extension.getTitle().set("Example");
+        extension.getProjects().set(Set.of(plain));
+
+        // ACT //
+        Exception thrown = assertThrows(Exception.class, () -> project.getTasks().getByName("aggregateJavadoc"));
+
+        // ASSERT //
+        assertTrue(causes(thrown).contains(":plain"), causes(thrown));
+        assertTrue(causes(thrown).contains("aggregateJavadoc.projects"), causes(thrown));
+    }
+
+    @Test
     void apply__failsWithoutTitle() {
         // ARRANGE //
         Project project = ProjectBuilder.builder().build();
@@ -162,6 +183,24 @@ class AggregateJavadocPluginTest {
                 causes(thrown).contains("aggregateJavadoc.title"),
                 "expected the failure to name the missing property, got: " + causes(thrown)
         );
+    }
+
+    @Test
+    void apply__groupsFollowEachModulesGroup() {
+        // ARRANGE //
+        Project project = ProjectBuilder.builder().build();
+        Project a = subproject(project, "a");
+        a.setGroup("org.example");
+        project.getPluginManager().apply(PLUGIN_ID);
+        AggregateJavadocExtension extension = project.getExtensions().getByType(AggregateJavadocExtension.class);
+        extension.getTitle().set("Example");
+
+        // ACT //
+        Javadoc task = (Javadoc) project.getTasks().getByName("aggregateJavadoc");
+        StandardJavadocDocletOptions options = (StandardJavadocDocletOptions) task.getOptions();
+
+        // ASSERT //
+        assertEquals(List.of(List.of("org.example.a*")), List.copyOf(options.getGroups().values()));
     }
 
     @Test
@@ -189,6 +228,31 @@ class AggregateJavadocPluginTest {
         assertEquals(TaskOutcome.UP_TO_DATE, second.task(":aggregateJavadoc").getOutcome());
     }
 
+    @Test
+    void apply__ordersSelectionByPath() throws IOException {
+        // ARRANGE //
+        Project project = ProjectBuilder.builder().build();
+        Set<Project> reversed = new LinkedHashSet<>();
+        for (String name : List.of("c", "b", "a")) {
+            Project child = subproject(project, name);
+            String type = name.toUpperCase(Locale.ROOT);
+            Path sources = Files.createDirectories(child.getProjectDir().toPath().resolve("src/main/java"));
+            Files.writeString(sources.resolve(type + ".java"), "class " + type + " {}");
+            reversed.add(child);
+        }
+        project.getPluginManager().apply(PLUGIN_ID);
+        AggregateJavadocExtension extension = project.getExtensions().getByType(AggregateJavadocExtension.class);
+        extension.getTitle().set("Example");
+        extension.getProjects().set(reversed);
+        Javadoc task = (Javadoc) project.getTasks().getByName("aggregateJavadoc");
+
+        // ACT //
+        List<String> files = task.getSource().getFiles().stream().map(file -> file.getName()).toList();
+
+        // ASSERT //
+        assertEquals(List.of("A.java", "B.java", "C.java"), files);
+    }
+
     /**
      * Flattens an exception and everything that caused it into one string. Gradle wraps a failure
      * thrown from {@code afterEvaluate} in a configuration exception, so the message under test is
@@ -209,25 +273,25 @@ class AggregateJavadocPluginTest {
         return Stream.of(
                 new GroupsParameters(
                         "prefix after its extension",
-                        List.of("a", "a-b"),
+                        List.of(module("a"), module("a-b")),
                         Map.of(),
                         List.of("A B Module", "A Module")
                 ),
                 new GroupsParameters(
                         "input order ignored",
-                        List.of("a-b", "a"),
+                        List.of(module("a-b"), module("a")),
                         Map.of(),
                         List.of("A B Module", "A Module")
                 ),
                 new GroupsParameters(
                         "word form replaces capitalisation",
-                        List.of("cli-brand"),
+                        List.of(module("cli-brand")),
                         Map.of("cli", "CLI"),
                         List.of("CLI Brand Module")
                 ),
                 new GroupsParameters(
                         "equal lengths sorted by name",
-                        List.of("b", "a"),
+                        List.of(module("b"), module("a")),
                         Map.of(),
                         List.of("A Module", "B Module")
                 )
@@ -238,20 +302,39 @@ class AggregateJavadocPluginTest {
     @ParameterizedTest
     void groups__labels(GroupsParameters parameters) {
         // ACT //
-        Map<String, String> groups = AggregateJavadocPlugin
-                .groups("org.example", parameters.modules(), parameters.wordForms());
+        Map<String, String> groups = AggregateJavadocPlugin.groups(parameters.modules(), parameters.wordForms());
 
         // ASSERT //
         assertEquals(parameters.expected(), List.copyOf(groups.keySet()), parameters.name());
     }
 
     @Test
+    void groups__patternFollowsModuleGroup() {
+        // ACT //
+        Map<String, String> groups = AggregateJavadocPlugin
+                .groups(List.of(new Module("org.y", "b"), new Module("org.x", "a")), Map.of());
+
+        // ASSERT //
+        assertEquals(List.of("org.x.a*", "org.y.b*"), List.copyOf(groups.values()));
+    }
+
+    @Test
     void groups__patternFollowsModuleName() {
         // ACT //
-        Map<String, String> groups = AggregateJavadocPlugin.groups("org.example", List.of("cli-brand"), Map.of());
+        Map<String, String> groups = AggregateJavadocPlugin.groups(List.of(module("cli-brand")), Map.of());
 
         // ASSERT //
         assertEquals(List.of("org.example.cli.brand*"), List.copyOf(groups.values()));
+    }
+
+    /**
+     * Builds a module in the group {@code org.example}.
+     *
+     * @param name the module's name
+     * @return the module
+     */
+    private static Module module(String name) {
+        return new Module("org.example", name);
     }
 
     /**

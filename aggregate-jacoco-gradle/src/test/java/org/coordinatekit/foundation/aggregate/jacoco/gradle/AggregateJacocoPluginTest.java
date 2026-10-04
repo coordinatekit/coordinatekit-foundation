@@ -24,7 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.gradle.api.Project;
 import org.gradle.testfixtures.ProjectBuilder;
 import org.gradle.testing.jacoco.tasks.JacocoReport;
+import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
+import org.gradle.testkit.runner.TaskOutcome;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.w3c.dom.Document;
@@ -42,6 +44,8 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
@@ -101,6 +105,54 @@ class AggregateJacocoPluginTest {
     }
 
     @Test
+    void apply__failsForProjectWithoutJava() {
+        // ARRANGE //
+        Project project = ProjectBuilder.builder().build();
+        Project plain = ProjectBuilder.builder().withName("plain").withParent(project).build();
+        project.getPluginManager().apply(PLUGIN_ID);
+        project.getExtensions().getByType(AggregateJacocoExtension.class).getProjects().set(Set.of(plain));
+        JacocoReport task = (JacocoReport) project.getTasks().getByName("aggregateJacocoReport");
+
+        // ACT //
+        Exception thrown = assertThrows(Exception.class, () -> task.getExecutionData().getFiles());
+
+        // ASSERT //
+        String messages = causes(thrown);
+        assertTrue(messages.contains(":plain"), "expected the failure to name the project, got: " + messages);
+        assertTrue(
+                messages.contains("aggregateJacoco.projects"),
+                "expected the failure to name the property to change, got: " + messages
+        );
+    }
+
+    @Test
+    void apply__ordersSelectionByPath() {
+        // ARRANGE //
+        Project project = ProjectBuilder.builder().build();
+        Set<Project> reversed = new LinkedHashSet<>();
+        for (String name : List.of("c", "b", "a")) {
+            reversed.add(subproject(project, name, true));
+        }
+        project.getPluginManager().apply(PLUGIN_ID);
+        project.getExtensions().getByType(AggregateJacocoExtension.class).getProjects().set(reversed);
+        JacocoReport task = (JacocoReport) project.getTasks().getByName("aggregateJacocoReport");
+
+        // ACT //
+        List<String> modules = task.getClassDirectories()
+                .getFiles()
+                .stream()
+                .map(
+                        file -> file.getPath().contains("/a/build/") ? "a"
+                                : file.getPath().contains("/b/build/") ? "b" : "c"
+                )
+                .distinct()
+                .toList();
+
+        // ASSERT //
+        assertEquals(List.of("a", "b", "c"), modules);
+    }
+
+    @Test
     void apply__registersVerificationReport() {
         // ARRANGE //
         Project project = ProjectBuilder.builder().build();
@@ -129,14 +181,18 @@ class AggregateJacocoPluginTest {
         // ARRANGE //
         writeFixture(directory);
 
-        // ACT //
-        GradleRunner.create()
+        GradleRunner runner = GradleRunner.create()
                 .withProjectDir(directory.toFile())
                 .withPluginClasspath()
-                .withArguments("aggregateJacocoReport", "--configuration-cache")
-                .build();
+                .withArguments("aggregateJacocoReport", "--configuration-cache");
+
+        // ACT //
+        runner.build();
+        BuildResult second = runner.build();
 
         // ASSERT //
+        assertTrue(second.getOutput().contains("Reusing configuration cache"), second.getOutput());
+        assertEquals(TaskOutcome.UP_TO_DATE, second.task(":aggregateJacocoReport").getOutcome());
         Path report = directory.resolve("build/reports/jacoco/aggregateJacocoReport");
         Map<String, Integer> coveredLines = coveredLines(report.resolve("aggregateJacocoReport.xml"));
         assertTrue(

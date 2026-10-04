@@ -32,7 +32,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
@@ -47,11 +46,12 @@ import java.util.stream.Collectors;
  * toolchain only in {@code subprojects { }} will run the task with the daemon's JDK instead.
  *
  * <p>
- * Each selected project gets a tab of its own. A project's package is the build's group plus its
- * name with the dashes turned into dots, so {@code cli-brand} in group {@code org.example} is
- * documented under {@code org.example.cli.brand}. Javadoc puts a package in the first group whose
- * pattern matches it, so the groups are registered longest module name first: without that, the
- * pattern for {@code concordance} would also claim the packages of {@code concordance-gradle}.
+ * Each selected project gets a tab of its own. A project's package is the project's own group plus
+ * its name with the dashes turned into dots, so {@code cli-brand} in group {@code org.example} is
+ * documented under {@code org.example.cli.brand}. A group set only in {@code subprojects { }} is
+ * enough. Javadoc puts a package in the first group whose pattern matches it, so the groups are
+ * registered longest module name first: without that, the pattern for {@code concordance} would
+ * also claim the packages of {@code concordance-gradle}.
  *
  * <p>
  * The task's classpath is the compile classpath of every selected project, which also builds any
@@ -63,6 +63,14 @@ import java.util.stream.Collectors;
  * @see AggregateJavadocExtension
  */
 public class AggregateJavadocPlugin implements Plugin<Project> {
+    /**
+     * A module to document.
+     *
+     * @param group the module's own group, which prefixes its packages
+     * @param name the module's project name
+     */
+    record Module(String group, String name) {}
+
     /** The encoding of the sources, of the pages, and of the character set the pages declare. */
     private static final String ENCODING = "UTF-8";
 
@@ -125,7 +133,7 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
                 new File(project.getLayout().getBuildDirectory().get().getAsFile(), "docs/" + TASK_NAME)
         );
 
-        Callable<Set<Project>> selected = () -> extension.getProjects().get();
+        Callable<List<Project>> selected = () -> selection(extension);
         task.source(
                 (Callable<Object>) () -> selected.call()
                         .stream()
@@ -152,8 +160,10 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
         options.setCharSet(ENCODING);
         options.addBooleanOption("Werror", true);
 
-        List<String> moduleNames = extension.getProjects().get().stream().map(Project::getName).toList();
-        groups(project.getGroup().toString(), moduleNames, extension.getWordForms().get())
+        List<Module> modules = selection(extension).stream()
+                .map(selectedProject -> new Module(selectedProject.getGroup().toString(), selectedProject.getName()))
+                .toList();
+        groups(modules, extension.getWordForms().get())
                 .forEach((label, pattern) -> options.group(label, List.of(pattern)));
     }
 
@@ -162,18 +172,24 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
      * {@code *}, and Javadoc puts a package in the first group that matches it, so a module whose name
      * prefixes another's has to be registered after it.
      *
-     * @param group the build's group, which prefixes every module's package
-     * @param moduleNames the names of the modules to document
+     * @param modules the modules to document
      * @param wordForms the display form of each name segment that is not just the segment capitalised
      * @return each group's label mapped to its package pattern, in registration order
      */
-    static Map<String, String> groups(String group, Collection<String> moduleNames, Map<String, String> wordForms) {
+    static Map<String, String> groups(Collection<Module> modules, Map<String, String> wordForms) {
         Map<String, String> groups = new LinkedHashMap<>();
-        moduleNames.stream()
-                .sorted(Comparator.comparingInt(String::length).reversed().thenComparing(Comparator.naturalOrder()))
+        modules.stream()
+                .sorted(
+                        Comparator.<Module>comparingInt(module -> module.name().length())
+                                .reversed()
+                                .thenComparing(Module::name)
+                                .thenComparing(Module::group)
+                )
                 .forEach(
-                        name -> groups
-                                .put(label(name, wordForms) + " Module", group + "." + name.replace('-', '.') + "*")
+                        module -> groups.put(
+                                label(module.name(), wordForms) + " Module",
+                                module.group() + "." + module.name().replace('-', '.') + "*"
+                        )
                 );
         return groups;
     }
@@ -208,5 +224,31 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
                 .getByType(JavaPluginExtension.class)
                 .getSourceSets()
                 .getByName(SourceSet.MAIN_SOURCE_SET_NAME);
+    }
+
+    /**
+     * Reads the selected projects in path order, so the task's inputs do not depend on the iteration
+     * order of the underlying set.
+     *
+     * @param extension the block the build configured
+     * @return the selected projects, sorted by path
+     * @throws InvalidUserDataException if a selected project does not apply the {@code java} plugin
+     */
+    private static List<Project> selection(AggregateJavadocExtension extension) {
+        List<Project> selected = extension.getProjects()
+                .get()
+                .stream()
+                .sorted(Comparator.comparing(Project::getPath))
+                .toList();
+        for (Project selectedProject : selected) {
+            if (!selectedProject.getPlugins().hasPlugin(JAVA_PLUGIN_ID)) {
+                throw new InvalidUserDataException(
+                        "Project " + selectedProject.getPath() + " is selected for " + TASK_NAME + " but does not"
+                                + " apply the " + JAVA_PLUGIN_ID + " plugin. Apply it, or leave the project out of "
+                                + EXTENSION_NAME + ".projects."
+                );
+            }
+        }
+        return selected;
     }
 }
