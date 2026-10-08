@@ -121,11 +121,18 @@ SED_ARGS=(
 # it needs a rule of its own. It is anchored to this project's own group and requires every further
 # segment of the id to follow a literal dot, which keeps a foreign id that merely starts with the
 # same letters out of the match.
+#
+# A plugin id shown at the in-development version is a different case: the `/-SNAPSHOT/!` address
+# above skips its line, so a further rule, anchored to CURRENT_VERSION, turns it into the release
+# on the release bump. It relies on the id form, which is why a plugin-id example must never be
+# added to RELEASE.md's "Consuming snapshots" section: this rule would release it. Snapshot
+# coordinates there use the `group:artifact:` form and are untouched.
 if [[ "$NEW_VERSION" != *-SNAPSHOT ]]; then
   SED_ARGS+=(
     -e "/-SNAPSHOT/!s/(^|[^A-Za-z0-9._-])($ESCAPED_GROUP:[A-Za-z0-9._-]+:)[0-9][A-Za-z0-9.+-]*/\1\2$NEW_VERSION/g"
     -e "/-SNAPSHOT/!s/(^|[^A-Za-z0-9._-])($ESCAPED_MODULES)-[0-9][A-Za-z0-9.+-]*\.jar/\1\2-$NEW_VERSION.jar/g"
     -e "/-SNAPSHOT/!s/(id \"$ESCAPED_GROUP(\.[A-Za-z0-9_-]+)*\" version \")[0-9][A-Za-z0-9.+-]*\"/\1$NEW_VERSION\"/g"
+    -e "s/(id \"$ESCAPED_GROUP(\.[A-Za-z0-9_-]+)*\" version \")$ESCAPED_CURRENT\"/\1$NEW_VERSION\"/g"
   )
 else
   # Snapshot coordinates (RELEASE.md) name the in-development version, so they are rewritten on the

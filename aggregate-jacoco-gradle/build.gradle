@@ -1,0 +1,19 @@
+description = "Gradle plugin that aggregates the JaCoCo coverage of a multi-module build into one report."
+
+// The one block outside the description-and-dependencies rule the other modules keep to: a plugin
+// id and its implementation class are this module's identity rather than build wiring, and
+// java-gradle-plugin reads them from here to generate the descriptor and the marker publication.
+gradlePlugin {
+    plugins {
+        aggregateJacoco {
+            id = "org.coordinatekit.foundation.aggregate-jacoco"
+            implementationClass = "org.coordinatekit.foundation.aggregate.jacoco.gradle.AggregateJacocoPlugin"
+            displayName = "Aggregate JaCoCo"
+            description = project.description
+        }
+    }
+}
+
+dependencies {
+    testImplementation gradleTestKit()
+}
