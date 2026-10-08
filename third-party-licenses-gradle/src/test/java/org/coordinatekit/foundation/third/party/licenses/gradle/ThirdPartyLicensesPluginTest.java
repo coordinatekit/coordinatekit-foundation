@@ -31,7 +31,6 @@ import org.gradle.testfixtures.ProjectBuilder;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 import org.gradle.testkit.runner.TaskOutcome;
-import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -83,22 +82,13 @@ class ThirdPartyLicensesPluginTest {
     private record AllowlistParameters(String name, String allowlist, List<String> expected) {}
 
     /**
-     * One allowlist that cannot be read as one, and the part of the message that says why.
-     *
-     * @param name what the case shows
-     * @param allowlist the allowlist file contents
-     * @param expectedMessage text the failure message contains
-     */
-    private record MalformedAllowlistParameters(String name, String allowlist, String expectedMessage) {}
-
-    /**
      * One module the fixture repository serves.
      *
      * @param artifact the artifact id, under the group {@code example}
-     * @param license the license name the POM declares, or {@code null} to declare none
+     * @param licenses the license names the POM declares, in order, empty to declare none
      * @param entries the entries to put in the module's jar, by path
      */
-    private record FixtureModule(String artifact, @Nullable String license, Map<String, String> entries) {}
+    private record FixtureModule(String artifact, List<String> licenses, Map<String, String> entries) {}
 
     /**
      * One set of reciprocal labels and the clause they join into.
@@ -298,8 +288,8 @@ class ThirdPartyLicensesPluginTest {
         writeFixture(
                 directory,
                 List.of(
-                        new FixtureModule("apache-lib", APACHE, Map.of()),
-                        new FixtureModule("lgpl-lib", LGPL, Map.of())
+                        new FixtureModule("apache-lib", List.of(APACHE), Map.of()),
+                        new FixtureModule("lgpl-lib", List.of(LGPL), Map.of())
                 ),
                 allowlist(Map.of("example:apache-lib", APACHE)),
                 registeredLicenses("")
@@ -317,11 +307,41 @@ class ThirdPartyLicensesPluginTest {
     }
 
     @Test
+    void generateThirdPartyLicenses__attributesApprovedLicense(@TempDir Path directory) throws IOException {
+        // ARRANGE //
+        writeFixture(
+                directory,
+                List.of(
+                        new FixtureModule("dual-lib", List.of(APACHE, LGPL), Map.of()),
+                        new FixtureModule("weird-lib", List.of("Weird License", APACHE), Map.of())
+                ),
+                allowlist(Map.of("example:dual-lib", LGPL, "example:weird-lib", APACHE)),
+                registeredLicenses("")
+        );
+
+        // ACT //
+        runner(directory, "generateThirdPartyLicenses").build();
+
+        // ASSERT //
+        String attribution = Files
+                .readString(directory.resolve("build/reports/third-party-licenses/THIRD-PARTY-LICENSES.txt"));
+        assertTrue(
+                attribution.contains("example:dual-lib:1.0 — " + LGPL + "\n"),
+                "the license the allowlist approves, not the first declared:\n" + attribution
+        );
+        assertTrue(
+                attribution.contains("example:weird-lib:1.0 — " + APACHE + "\n"),
+                "the approved license, past an unregistered first one:\n" + attribution
+        );
+        assertFalse(attribution.contains("Weird License"), attribution);
+    }
+
+    @Test
     void generateThirdPartyLicenses__failsOnMissingRequiredNotice(@TempDir Path directory) throws IOException {
         // ARRANGE //
         writeFixture(
                 directory,
-                List.of(new FixtureModule("mit-lib", MIT, Map.of())),
+                List.of(new FixtureModule("mit-lib", List.of(MIT), Map.of())),
                 allowlist(Map.of("example:mit-lib", MIT)),
                 registeredLicenses("")
         );
@@ -341,7 +361,7 @@ class ThirdPartyLicensesPluginTest {
         // ARRANGE //
         writeFixture(
                 directory,
-                List.of(new FixtureModule("bare-lib", null, Map.of())),
+                List.of(new FixtureModule("bare-lib", List.of(), Map.of())),
                 allowlist(Map.of("example:bare-lib", "")),
                 registeredLicenses("")
         );
@@ -364,14 +384,14 @@ class ThirdPartyLicensesPluginTest {
                 List.of(
                         new FixtureModule(
                                 "apache-lib",
-                                APACHE,
+                                List.of(APACHE),
                                 Map.of("META-INF/NOTICE", "Apache notice line one\nline two\n")
                         ),
-                        new FixtureModule("apache-other", APACHE, Map.of()),
-                        new FixtureModule("apache-txt", APACHE, Map.of("NOTICE.txt", "Root notice\n")),
-                        new FixtureModule("bare-lib", null, Map.of()),
-                        new FixtureModule("lgpl-lib", LGPL, Map.of()),
-                        new FixtureModule("mit-lib", MIT, Map.of("META-INF/NOTICE", "MIT jar notice\n"))
+                        new FixtureModule("apache-other", List.of(APACHE), Map.of()),
+                        new FixtureModule("apache-txt", List.of(APACHE), Map.of("NOTICE.txt", "Root notice\n")),
+                        new FixtureModule("bare-lib", List.of(), Map.of()),
+                        new FixtureModule("lgpl-lib", List.of(LGPL), Map.of()),
+                        new FixtureModule("mit-lib", List.of(MIT), Map.of("META-INF/NOTICE", "MIT jar notice\n"))
                 ),
                 allowlist(
                         Map.of(
@@ -648,41 +668,10 @@ class ThirdPartyLicensesPluginTest {
     void unregisteredAllowedLicenses__cases(AllowlistParameters parameters) {
         // ACT //
         List<String> unregistered = ThirdPartyLicensesPlugin
-                .unregisteredAllowedLicenses(parameters.allowlist(), Set.of(MIT, APACHE));
+                .unregisteredAllowedLicenses(Allowlist.parse(parameters.allowlist()), Set.of(MIT, APACHE));
 
         // ASSERT //
         assertEquals(parameters.expected(), unregistered, parameters.name());
-    }
-
-    static Stream<MalformedAllowlistParameters> unregisteredAllowedLicenses__malformed() {
-        return Stream.of(
-                new MalformedAllowlistParameters("not JSON", "{\"allowedLicenses\": [", "not valid JSON"),
-                new MalformedAllowlistParameters("top level is a list", "[]", "top level is not an object"),
-                new MalformedAllowlistParameters(
-                        "allowedLicenses is an object",
-                        "{\"allowedLicenses\": {}}",
-                        "allowedLicenses is not a list"
-                ),
-                new MalformedAllowlistParameters(
-                        "entry is a string",
-                        "{\"allowedLicenses\": [\"MIT License\"]}",
-                        "entry that is not an object"
-                )
-        );
-    }
-
-    @MethodSource("unregisteredAllowedLicenses__malformed")
-    @ParameterizedTest
-    void unregisteredAllowedLicenses__malformed(MalformedAllowlistParameters parameters) {
-        // ACT //
-        IllegalArgumentException thrown = assertThrows(
-                IllegalArgumentException.class,
-                () -> ThirdPartyLicensesPlugin.unregisteredAllowedLicenses(parameters.allowlist(), Set.of(MIT, APACHE)),
-                parameters.name()
-        );
-
-        // ASSERT //
-        assertTrue(thrown.getMessage().contains(parameters.expectedMessage()), thrown.getMessage());
     }
 
     /**
@@ -711,8 +700,16 @@ class ThirdPartyLicensesPluginTest {
         for (FixtureModule module : modules) {
             Path version = repository.resolve("example/" + module.artifact() + "/1.0");
             Files.createDirectories(version);
-            String licenses = module.license() == null ? ""
-                    : "<licenses><license><name>" + module.license() + "</name></license></licenses>";
+            String licenses = module.licenses()
+                    .stream()
+                    .map(license -> "<license><name>" + license + "</name></license>")
+                    .collect(
+                            Collectors.joining(
+                                    "",
+                                    module.licenses().isEmpty() ? "" : "<licenses>",
+                                    module.licenses().isEmpty() ? "" : "</licenses>"
+                            )
+                    );
             Files.writeString(
                     version.resolve(module.artifact() + "-1.0.pom"),
                     "<project xmlns=\"http://maven.apache.org/POM/4.0.0\"><modelVersion>4.0.0</modelVersion>"

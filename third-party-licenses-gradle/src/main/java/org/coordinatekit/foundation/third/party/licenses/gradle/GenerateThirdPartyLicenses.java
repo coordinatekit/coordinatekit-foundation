@@ -31,6 +31,7 @@ import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Nested;
+import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
@@ -67,6 +68,12 @@ import java.util.zip.ZipFile;
  * license is not registered stops it, and so does a dependency under a license that requires a
  * copyright notice when none was supplied. Both messages name the {@code thirdPartyLicenses} block
  * that fixes them.
+ *
+ * <p>
+ * A dependency's license is its {@code licenseOverrides} entry if it has one. Otherwise it is
+ * chosen from the licenses the report lists for it by the allowlist, the way {@code checkLicense}
+ * approves it: the first listed license that the allowlist approves for that module, preferring one
+ * that is registered. See {@link Allowlist#elect}.
  *
  * <p>
  * The preamble is fixed. It says each dependency ships as a separate jar under {@code lib/}, and
@@ -118,23 +125,23 @@ public abstract class GenerateThirdPartyLicenses extends DefaultTask {
     }
 
     /**
-     * Returns the first non-empty license the report lists for a dependency.
+     * Returns every non-empty license the report lists for a dependency.
      *
      * @param dependency the dependency's entry in the report
-     * @return the license name, or {@code null} when the report lists none
+     * @return the license names in report order, empty when the report lists none
      */
-    private static @Nullable String firstLicense(Map<String, Object> dependency) {
+    private static List<String> declaredLicenses(Map<String, Object> dependency) {
         Object licenses = dependency.get("moduleLicenses");
+        List<String> declared = new ArrayList<>();
         if (licenses == null) {
-            return null;
+            return declared;
         }
         for (Object entry : asList(licenses)) {
-            Object name = asMap(entry).get("moduleLicense");
-            if (name instanceof String license && !license.isEmpty()) {
-                return license;
+            if (asMap(entry).get("moduleLicense")instanceof String license && !license.isEmpty()) {
+                declared.add(license);
             }
         }
-        return null;
+        return declared;
     }
 
     /**
@@ -155,6 +162,18 @@ public abstract class GenerateThirdPartyLicenses extends DefaultTask {
         Files.createDirectories(outputDirectory);
         Files.writeString(outputDirectory.resolve(OUTPUT_FILE_NAME), render(dependencies, definitions));
     }
+
+    /**
+     * The allowlist the license report's {@code checkLicense} task reads, which decides the license
+     * named for a dependency that declares several. Absent when the build has no allowlist file, in
+     * which case the first declared license is named.
+     *
+     * @return the allowlist file
+     */
+    @InputFile
+    @Optional
+    @PathSensitive(PathSensitivity.NONE)
+    public abstract RegularFileProperty getAllowedLicensesFile();
 
     /**
      * The copyright notice to print under a dependency's entry, keyed by {@code group:artifact}.
@@ -276,7 +295,8 @@ public abstract class GenerateThirdPartyLicenses extends DefaultTask {
     /**
      * Reads the dependencies out of the license report, applying the overrides and the copyright
      * notices, and returns them sorted by coordinate. A dependency's license is its override if it has
-     * one, and otherwise the first non-empty license the report lists for it.
+     * one, and otherwise the one {@link Allowlist#elect elected} from the licenses the report lists for
+     * it.
      *
      * @param definitions the registered licenses by name
      * @return every dependency in the report
@@ -286,6 +306,8 @@ public abstract class GenerateThirdPartyLicenses extends DefaultTask {
         Map<String, File> jars = jarByModule();
         Map<String, String> overrides = getLicenseOverrides().get();
         Map<String, String> notices = getCopyrightNotices().get();
+        File allowlist = getAllowedLicensesFile().getAsFile().getOrNull();
+        List<Allowlist.Rule> rules = allowlist == null ? List.of() : Allowlist.read(allowlist);
 
         Object report = new JsonSlurper().parse(getReport().get().getAsFile());
         List<Dependency> dependencies = new ArrayList<>();
@@ -295,7 +317,13 @@ public abstract class GenerateThirdPartyLicenses extends DefaultTask {
 
             String license = overrides.get(moduleName);
             if (license == null || license.isEmpty()) {
-                license = firstLicense(dependency);
+                license = Allowlist.elect(
+                        moduleName,
+                        (String) dependency.get("moduleVersion"),
+                        declaredLicenses(dependency),
+                        rules,
+                        definitions.keySet()
+                );
             }
 
             LicenseDefinition definition = license == null ? null : definitions.get(license);

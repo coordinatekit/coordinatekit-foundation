@@ -21,9 +21,6 @@ import com.github.jk1.license.filter.DependencyFilter;
 import com.github.jk1.license.filter.LicenseBundleNormalizer;
 import com.github.jk1.license.render.JsonReportRenderer;
 import com.github.jk1.license.render.ReportRenderer;
-import groovy.json.JsonException;
-import groovy.json.JsonParserType;
-import groovy.json.JsonSlurper;
 import org.gradle.api.GradleException;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
@@ -34,15 +31,9 @@ import org.gradle.api.tasks.TaskProvider;
 import org.gradle.api.distribution.DistributionContainer;
 
 import java.io.File;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 /**
  * Checks a build's runtime dependency licenses and renders the attribution file that ships with its
@@ -160,28 +151,6 @@ public class ThirdPartyLicensesPlugin implements Plugin<Project> {
     }
 
     /**
-     * Returns whether an allowlist rule can be satisfied by a registered license, by the license
-     * report's own test: {@code .*} always, otherwise a registered name that equals the rule or that
-     * the rule matches in full as a regular expression. A rule that is not a valid expression can only
-     * match literally, as it could not in the report either.
-     *
-     * @param rule an allowlist {@code moduleLicense}
-     * @param registered the names of the registered licenses
-     * @return whether some registered license satisfies the rule
-     */
-    private static boolean isRegistered(String rule, Set<String> registered) {
-        if (rule.equals(".*") || registered.contains(rule)) {
-            return true;
-        }
-        try {
-            Pattern pattern = Pattern.compile(rule);
-            return registered.stream().anyMatch(name -> pattern.matcher(name).matches());
-        } catch (PatternSyntaxException e) {
-            return false;
-        }
-    }
-
-    /**
      * Registers the task that renders the attribution, wired to the license report's output and to the
      * runtime classpath by name, so nothing resolves until the task runs.
      *
@@ -202,6 +171,8 @@ public class ThirdPartyLicensesPlugin implements Plugin<Project> {
                     "Renders THIRD-PARTY-LICENSES.txt from the license report and the registered license texts."
             );
             task.dependsOn(GENERATE_LICENSE_REPORT_TASK_NAME, CHECK_LICENSE_TASK_NAME);
+            task.getAllowedLicensesFile()
+                    .set(extension.getAllowedLicensesFile().map(file -> file.getAsFile().isFile() ? file : null));
             task.getCopyrightNotices().set(extension.getCopyrightNotices());
             task.getLicenseOverrides().set(extension.getLicenseOverrides());
             task.getLicenses().addAllLater(project.provider(() -> List.copyOf(extension.getLicenses())));
@@ -229,18 +200,10 @@ public class ThirdPartyLicensesPlugin implements Plugin<Project> {
      * @param extension the values the build set
      */
     private static void requireRegistered(File allowlist, ThirdPartyLicensesExtension extension) {
-        String json;
-        try {
-            json = Files.readString(allowlist.toPath());
-        } catch (IOException e) {
-            throw new UncheckedIOException("Cannot read " + allowlist, e);
-        }
-        List<String> unregistered;
-        try {
-            unregistered = unregisteredAllowedLicenses(json, extension.getLicenses().getNames());
-        } catch (IllegalArgumentException e) {
-            throw new GradleException("Cannot read " + allowlist.getName() + ": " + e.getMessage(), e);
-        }
+        List<String> unregistered = unregisteredAllowedLicenses(
+                Allowlist.read(allowlist),
+                extension.getLicenses().getNames()
+        );
         if (!unregistered.isEmpty()) {
             throw new GradleException(
                     allowlist.getName() + " allows licenses that are not registered in thirdPartyLicenses.licenses: "
@@ -252,44 +215,22 @@ public class ThirdPartyLicensesPlugin implements Plugin<Project> {
 
     /**
      * Returns the licenses an allowlist names that no registered license matches, each with the module
-     * that names it. The file is read the way the license report's {@code checkLicense} reads it:
-     * leniently parsed, and each {@code moduleLicense} taken as a regular expression that has to match
-     * a whole name, with {@code .*} accepted outright. An empty {@code moduleLicense} is skipped,
-     * because it is the report's rule for a dependency whose POM declares no license, and an override
-     * supplies the real one.
+     * that names it. Each {@code moduleLicense} is taken as the license report's {@code checkLicense}
+     * takes it: a regular expression that has to match a whole name, with {@code .*} accepted outright.
+     * An empty {@code moduleLicense} is skipped, because it is the report's rule for a dependency whose
+     * POM declares no license, and an override supplies the real one.
      *
-     * @param allowlistJson the contents of the allowlist file
+     * @param rules the allowlist's rules
      * @param registered the names of the registered licenses
      * @return one {@code module (license)} entry for each allowlisted license that no registered name
      *         satisfies
-     * @throws IllegalArgumentException if the contents do not parse, or are not an object whose
-     *         {@code allowedLicenses} is a list of objects
      */
-    static List<String> unregisteredAllowedLicenses(String allowlistJson, Set<String> registered) {
-        Object allowlist;
-        try {
-            allowlist = new JsonSlurper().setType(JsonParserType.LAX).parseText(allowlistJson);
-        } catch (JsonException e) {
-            throw new IllegalArgumentException("it is not valid JSON: " + e.getMessage(), e);
-        }
-        if (!(allowlist instanceof Map<?, ?> root)) {
-            throw new IllegalArgumentException("its top level is not an object");
-        }
-        Object entries = root.get("allowedLicenses");
+    static List<String> unregisteredAllowedLicenses(List<Allowlist.Rule> rules, Set<String> registered) {
         List<String> unregistered = new ArrayList<>();
-        if (entries == null) {
-            return unregistered;
-        }
-        if (!(entries instanceof List<?> list)) {
-            throw new IllegalArgumentException("allowedLicenses is not a list");
-        }
-        for (Object entry : list) {
-            if (!(entry instanceof Map<?, ?> allowed)) {
-                throw new IllegalArgumentException("allowedLicenses holds an entry that is not an object: " + entry);
-            }
-            if (allowed.get("moduleLicense")instanceof String license && !license.isEmpty()
-                    && !isRegistered(license, registered)) {
-                unregistered.add(allowed.get("moduleName") + " (" + license + ")");
+        for (Allowlist.Rule rule : rules) {
+            String license = rule.moduleLicense();
+            if (license != null && !license.isEmpty() && !rule.allowsAnyOf(registered)) {
+                unregistered.add(rule.moduleName() + " (" + license + ")");
             }
         }
         return unregistered;

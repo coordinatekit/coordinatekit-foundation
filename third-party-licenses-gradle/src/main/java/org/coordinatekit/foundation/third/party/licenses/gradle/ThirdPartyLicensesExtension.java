@@ -90,8 +90,9 @@ public abstract class ThirdPartyLicensesExtension {
      * {@code group:artifact}. The override replaces the license name in the attribution only; the
      * {@code checkLicense} task still validates the POM's own license against the allowlist, so an
      * override does not avoid the need for an allowlist entry that accepts the POM's declared license.
-     * This covers a dependency whose POM chain declares no license at all. The value must be a license
-     * registered in {@link #getLicenses()}. Empty by default.
+     * This covers a dependency whose POM chain declares no license at all, and it is how to pick one of
+     * the licenses a dual-licensed dependency declares, since the allowlist cannot choose between two
+     * it approves. The value must be a license registered in {@link #getLicenses()}. Empty by default.
      *
      * @return the license name for each overridden module
      */
