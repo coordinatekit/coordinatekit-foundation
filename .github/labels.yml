@@ -1,0 +1,51 @@
+- name: "area: aggregate-jacoco"
+  color: c5def5
+  description: Root aggregateJacocoReport task plugin
+
+- name: "area: aggregate-javadoc"
+  color: c5def5
+  description: Root aggregateJavadoc task plugin
+
+- name: "area: build"
+  color: c5def5
+  description: Gradle, CI, dependencies, cross-cutting foundations
+
+- name: "area: changelog"
+  color: c5def5
+  description: git-changelog Gradle plugin and CHANGELOG.md generation
+
+- name: "area: cli-brand"
+  color: c5def5
+  description: Banner rendering for CLI brand art
+
+- name: "area: concordance"
+  color: c5def5
+  description: Member-order rule
+
+- name: "area: conventions"
+  color: c5def5
+  description: Eclipse formatter profile and Apache-2.0 license header
+
+- name: epic
+  color: 9b7fd4
+  description: Tracks a body of work spanning multiple issues
+
+- name: good first issue
+  color: d4c5f9
+  description: Approachable for a first-time contributor
+
+- name: help wanted
+  color: c2e0c6
+  description: Maintainer would welcome outside help
+
+- name: needs-info
+  color: fef2c0
+  description: Blocked on more information from the reporter
+
+- name: question
+  color: d876e3
+  description: Further information is requested
+
+- name: wontfix
+  color: ffffff
+  description: This will not be worked on
