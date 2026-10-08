@@ -10,7 +10,7 @@ errorprone-target = "2.50.0"
 errorprone-plugin-target = "5.1.0"
 
 # implementation — keep current
-gitchangelog-plugin = "3.4.0"
+gitchangelog-plugin = "3.4.2"
 jline = "4.4.6"
 slf4j = "2.0.20"
 
