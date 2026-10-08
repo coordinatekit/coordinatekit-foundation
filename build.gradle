@@ -38,18 +38,20 @@ def pluginProjects = [
         project(":aggregate-jacoco-gradle"),
         project(":aggregate-javadoc-gradle"),
         project(":changelog-gradle"),
-        project(":concordance-gradle")
+        project(":concordance-gradle"),
+        project(":third-party-licenses-gradle")
 ]
 
-// Two plugin modules build on a plugin that publishes to the Gradle Plugin Portal and not to Maven
+// Three plugin modules build on a plugin that publishes to the Gradle Plugin Portal and not to Maven
 // Central: concordance-gradle reaches net.ltgt.gradle:gradle-errorprone-plugin's ErrorProneOptions
-// type, and changelog-gradle applies se.bjurr's git-changelog. The portal is added to those two
-// rather than to allprojects so that nothing else resolves through its own mirror of Central. They
-// differ in what a consumer sees: concordance-gradle's dependency is compileOnly, so it stays out of
-// the published POM, while changelog-gradle's is implementation, so it appears there and a
-// consumer's build resolves it from the portal too. The aggregate plugins need only the Gradle API
-// and JSpecify, so they stay off it.
-configure([project(":changelog-gradle"), project(":concordance-gradle")]) {
+// type, changelog-gradle applies se.bjurr's git-changelog, and third-party-licenses-gradle applies
+// com.github.jk1:gradle-license-report. The portal is added to those three rather than to
+// allprojects so that nothing else resolves through its own mirror of Central. They differ in what a
+// consumer sees: concordance-gradle's dependency is compileOnly, so it stays out of the published
+// POM, while the other two are implementation, so they appear there and a consumer's build resolves
+// them from the portal too. The aggregate plugins need only the Gradle API and JSpecify, so they
+// stay off it.
+configure([project(":changelog-gradle"), project(":concordance-gradle"), project(":third-party-licenses-gradle")]) {
     repositories {
         gradlePluginPortal()
     }
@@ -70,8 +72,8 @@ configure(pluginProjects) {
     //
     // The runtime those probes call goes on the daemon's boot classpath rather than beside the
     // plugin, because Gradle closes the build script's classloader before the daemon exits, and a
-    // runtime loaded there can no longer load the classes it writes its data with. writeFixture
-    // passes these arguments on through each fixture's gradle.properties.
+    // runtime loaded there can no longer load the classes it writes its data with. Each module's
+    // writeFixture passes these arguments on through the fixture's gradle.properties.
     configurations {
         testKitJacocoRuntime {
             canBeConsumed = false
@@ -183,6 +185,7 @@ dependencies {
     nmcpAggregation project(":concordance-errorprone")
     nmcpAggregation project(":concordance-gradle")
     nmcpAggregation project(":conventions")
+    nmcpAggregation project(":third-party-licenses-gradle")
 }
 
 subprojects {

@@ -1,0 +1,21 @@
+description = "Gradle plugin that checks a build's runtime dependency licenses and renders its third-party attribution file."
+
+// The one block outside the description-and-dependencies rule the other modules keep to: a plugin
+// id and its implementation class are this module's identity rather than build wiring, and
+// java-gradle-plugin reads them from here to generate the descriptor and the marker publication.
+gradlePlugin {
+    plugins {
+        thirdPartyLicenses {
+            id = "org.coordinatekit.foundation.third-party-licenses"
+            implementationClass = "org.coordinatekit.foundation.third.party.licenses.gradle.ThirdPartyLicensesPlugin"
+            displayName = "Third-party licenses"
+            description = project.description
+        }
+    }
+}
+
+dependencies {
+    implementation libs.license.report.gradle.plugin
+
+    testImplementation gradleTestKit()
+}
