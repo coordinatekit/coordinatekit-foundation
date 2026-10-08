@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.coordinatekit.foundation.aggregate.javadoc.gradle.AggregateJavadocPlugin.Module;
 import org.gradle.api.Project;
+import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.tasks.javadoc.Javadoc;
 import org.gradle.external.javadoc.StandardJavadocDocletOptions;
@@ -61,7 +62,8 @@ import java.util.stream.Stream;
  * <p>
  * The fixture build applies the plugin through {@code plugins { id ... }} and
  * {@code withPluginClasspath()}, so it also exercises the descriptor {@code java-gradle-plugin}
- * generates.
+ * generates. Its root build realizes the task early through {@code allprojects { tasks.withType }},
+ * the idiom that reads the selection before the subprojects are evaluated.
  */
 class AggregateJavadocPluginTest {
     /**
@@ -105,6 +107,7 @@ class AggregateJavadocPluginTest {
 
         // ACT //
         Javadoc task = (Javadoc) project.getTasks().getByName("aggregateJavadoc");
+        projectsEvaluated(project);
         StandardJavadocDocletOptions options = (StandardJavadocDocletOptions) task.getOptions();
         Path optionFile = directory.resolve("javadoc.options");
         options.write(optionFile.toFile());
@@ -162,7 +165,10 @@ class AggregateJavadocPluginTest {
         extension.getProjects().set(Set.of(plain));
 
         // ACT //
-        Exception thrown = assertThrows(Exception.class, () -> project.getTasks().getByName("aggregateJavadoc"));
+        Exception thrown = assertThrows(Exception.class, () -> {
+            projectsEvaluated(project);
+            project.getTasks().getByName("aggregateJavadoc");
+        });
 
         // ASSERT //
         assertTrue(causes(thrown).contains(":plain"), causes(thrown));
@@ -197,6 +203,7 @@ class AggregateJavadocPluginTest {
 
         // ACT //
         Javadoc task = (Javadoc) project.getTasks().getByName("aggregateJavadoc");
+        projectsEvaluated(project);
         StandardJavadocDocletOptions options = (StandardJavadocDocletOptions) task.getOptions();
 
         // ASSERT //
@@ -226,6 +233,25 @@ class AggregateJavadocPluginTest {
         assertEquals("A B Module", tabOf(index, "fixture/a/b/package-summary.html"));
         assertTrue(second.getOutput().contains("Reusing configuration cache"), second.getOutput());
         assertEquals(TaskOutcome.UP_TO_DATE, second.task(":aggregateJavadoc").getOutcome());
+    }
+
+    @Test
+    void apply__groupsSurviveEarlyRealization() {
+        // ARRANGE //
+        Project project = ProjectBuilder.builder().build();
+        project.getPluginManager().apply(PLUGIN_ID);
+        AggregateJavadocExtension extension = project.getExtensions().getByType(AggregateJavadocExtension.class);
+        extension.getTitle().set("Example");
+        Javadoc task = (Javadoc) project.getTasks().getByName("aggregateJavadoc");
+        Project a = subproject(project, "a");
+        a.setGroup("org.example");
+
+        // ACT //
+        projectsEvaluated(project);
+
+        // ASSERT //
+        StandardJavadocDocletOptions options = (StandardJavadocDocletOptions) task.getOptions();
+        assertEquals(List.of(List.of("org.example.a*")), List.copyOf(options.getGroups().values()));
     }
 
     @Test
@@ -338,6 +364,16 @@ class AggregateJavadocPluginTest {
     }
 
     /**
+     * Fires the {@code projectsEvaluated} callbacks of a project's build. A {@link ProjectBuilder}
+     * project is never evaluated as part of a real build, so Gradle does not fire the callback itself.
+     *
+     * @param project a project of the build whose callbacks to fire
+     */
+    private static void projectsEvaluated(Project project) {
+        ((GradleInternal) project.getGradle()).getBuildListenerBroadcaster().projectsEvaluated(project.getGradle());
+    }
+
+    /**
      * Adds a child project that applies the {@code java} plugin.
      *
      * @param parent the project to add the child to
@@ -372,8 +408,10 @@ class AggregateJavadocPluginTest {
 
     /**
      * Writes a consumer build with three modules, {@code a}, {@code a-b}, and {@code support}, where
-     * {@code a} depends on {@code support} and only the first two are selected. Every fixture source is
-     * fully documented, because the task fails on a Javadoc warning.
+     * {@code a} depends on {@code support} and only the first two are selected. Each module applies
+     * {@code java-library} in its own build script, and the root build realizes the task from an
+     * {@code allprojects} block above the {@code aggregateJavadoc} block. Every fixture source is fully
+     * documented, because the task fails on a Javadoc warning.
      *
      * <p>
      * When the test task sets {@code testKit.fixtureJvmArgs}, the fixture also gets a
@@ -404,15 +442,8 @@ class AggregateJavadocPluginTest {
 
                 allprojects {
                     group = "fixture"
-                }
-
-                subprojects {
-                    apply plugin: "java-library"
-                }
-
-                project(":a") {
-                    dependencies {
-                        implementation project(":support")
+                    tasks.withType(Javadoc) {
+                        options.encoding = "UTF-8"
                     }
                 }
 
@@ -421,6 +452,15 @@ class AggregateJavadocPluginTest {
                     title = "Fixture"
                 }
                 """);
+
+        for (String module : List.of("a", "a-b", "support")) {
+            String dependencies = module.equals("a") ? "dependencies { implementation project(\":support\") }\n" : "";
+            Files.createDirectories(directory.resolve(module));
+            Files.writeString(
+                    directory.resolve(module).resolve("build.gradle"),
+                    "plugins { id \"java-library\" }\n" + dependencies
+            );
+        }
 
         writeSource(directory, "support", "fixture.support", "Support", """
                 /** A type the selected modules depend on. */

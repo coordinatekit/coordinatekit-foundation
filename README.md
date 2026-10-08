@@ -161,7 +161,7 @@ tasks.named("aggregateJavadoc", Javadoc) {
 }
 ```
 
-The task reads the selection when it is realized, so `tasks.getByName` and `tasks.all` in the root project, which realize it during evaluation, are the calls to avoid. The Javadoc tool comes from the root project's toolchain, so a build that sets a toolchain only in `subprojects { }` will run the task with the daemon's JDK.
+The settings that depend on the selection are read once every project has been evaluated, so realizing the task early, as `allprojects { tasks.withType(Javadoc) { } }` does, is safe. The title, the links, and the groups come only from the `aggregateJavadoc` block, and a `tasks.named` action that sets the title is overwritten. The Javadoc tool comes from the root project's toolchain, so a build that sets a toolchain only in `subprojects { }` will run the task with the daemon's JDK.
 
 `aggregateJacocoReport` writes XML and HTML to `build/reports/jacoco/aggregateJacocoReport`. It runs each selected module's `test` task and reads the execution data that module's own `jacocoTestReport` reads, so any extra data file a build adds there reaches the aggregate too. A selected module without a `jacocoTestReport` task fails the build with a message naming it and `aggregateJacoco.projects`. JaCoCo's Ant tasks resolve against the root project's own repositories, which is why the example declares `mavenCentral()` there.
 

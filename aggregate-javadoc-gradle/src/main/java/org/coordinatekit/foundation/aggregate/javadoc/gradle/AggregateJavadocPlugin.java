@@ -24,7 +24,6 @@ import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.javadoc.Javadoc;
 import org.gradle.external.javadoc.StandardJavadocDocletOptions;
 
-import java.io.File;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
@@ -55,10 +54,13 @@ import java.util.stream.Collectors;
  *
  * <p>
  * The task's classpath is the compile classpath of every selected project, which also builds any
- * project the selected ones depend on without documenting it. The selection is read when the task
- * is realized, so nothing in the applying build may realize it before the subprojects have been
- * evaluated. {@code tasks.named} with a configuration action is safe; {@code tasks.getByName} and
- * {@code tasks.all} in the root project are not.
+ * project the selected ones depend on without documenting it. The settings that depend on the
+ * selection are read once every project has been evaluated, so realizing the task early, as
+ * {@code allprojects { tasks.withType(Javadoc) { } }} does, is safe.
+ *
+ * <p>
+ * The title, the links, and the groups come only from the {@code aggregateJavadoc} block. A
+ * {@code tasks.named} action that sets the title is overwritten.
  *
  * @see AggregateJavadocExtension
  */
@@ -115,12 +117,22 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
         });
 
         project.getTasks().register(TASK_NAME, Javadoc.class, task -> configure(project, extension, task));
+
+        project.getGradle().projectsEvaluated(gradle -> {
+            extension.getProjects().finalizeValue();
+            extension.getTitle().finalizeValue();
+            extension.getLinks().finalizeValue();
+            extension.getWordForms().finalizeValue();
+            project.getTasks()
+                    .named(TASK_NAME, Javadoc.class)
+                    .configure(task -> configureSelection(project, extension, task));
+        });
     }
 
     /**
-     * Configures the aggregate task. Runs when the task is realized, which is when the title and the
-     * module groups are read. The sources and the classpath are read later, when the task graph is
-     * built, through a {@link Callable}.
+     * Configures the settings of the aggregate task that do not depend on the selection. Runs when the
+     * task is realized, which may be before the subprojects have been evaluated. The sources and the
+     * classpath are read later, when the task graph is built, through a {@link Callable}.
      *
      * @param project the project the plugin is applied to
      * @param extension the block the build configured
@@ -129,9 +141,7 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
     private static void configure(Project project, AggregateJavadocExtension extension, Javadoc task) {
         task.setDescription("Generates the Javadoc of every selected module as one set of pages.");
         task.setGroup(JavaBasePlugin.DOCUMENTATION_GROUP);
-        task.setDestinationDir(
-                new File(project.getLayout().getBuildDirectory().get().getAsFile(), "docs/" + TASK_NAME)
-        );
+        task.getDestinationDirectory().set(project.getLayout().getBuildDirectory().dir("docs/" + TASK_NAME));
 
         Callable<List<Project>> selected = () -> selection(extension);
         task.source(
@@ -149,16 +159,29 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
                 )
         );
 
+        StandardJavadocDocletOptions options = (StandardJavadocDocletOptions) task.getOptions();
+        options.setEncoding(ENCODING);
+        options.setDocEncoding(ENCODING);
+        options.setCharSet(ENCODING);
+        options.addBooleanOption("Werror", true);
+    }
+
+    /**
+     * Configures the settings of the aggregate task that depend on the selection or on the block: the
+     * titles, the links, and the groups. Runs once every project has been evaluated, or when the task
+     * is realized if that comes later.
+     *
+     * @param project the project the plugin is applied to
+     * @param extension the block the build configured
+     * @param task the task to configure
+     */
+    private static void configureSelection(Project project, AggregateJavadocExtension extension, Javadoc task) {
         String title = extension.getTitle().get();
         task.setTitle(title + " " + project.getVersion() + " API");
 
         StandardJavadocDocletOptions options = (StandardJavadocDocletOptions) task.getOptions();
         options.setWindowTitle(title + " API");
         options.setLinks(extension.getLinks().get());
-        options.setEncoding(ENCODING);
-        options.setDocEncoding(ENCODING);
-        options.setCharSet(ENCODING);
-        options.addBooleanOption("Werror", true);
 
         List<Module> modules = selection(extension).stream()
                 .map(selectedProject -> new Module(selectedProject.getGroup().toString(), selectedProject.getName()))
