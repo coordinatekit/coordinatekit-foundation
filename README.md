@@ -10,7 +10,7 @@ It includes `cli-brand`, the brand banner CoordinateKit's command-line tools pri
 
 ```groovy
 dependencies {
-    implementation "org.coordinatekit.foundation:cli-brand:0.2.0"
+    implementation "org.coordinatekit.foundation:cli-brand:0.3.0"
 }
 ```
 
@@ -39,7 +39,7 @@ The links are built from `repoUrl` in `gradle.properties`.
 
 ```groovy
 plugins {
-    id "org.coordinatekit.foundation.changelog" version "0.2.0"
+    id "org.coordinatekit.foundation.changelog" version "0.3.0"
 }
 ```
 
@@ -84,13 +84,13 @@ The build then applies it beside `net.ltgt.errorprone`. The plugin reacts to tha
 ```groovy
 plugins {
     id "net.ltgt.errorprone" version "5.1.0"
-    id "org.coordinatekit.foundation.concordance" version "0.2.0"
+    id "org.coordinatekit.foundation.concordance" version "0.3.0"
 }
 
 dependencies {
     errorprone "com.google.errorprone:error_prone_core:2.50.0"
-    compileOnly "org.coordinatekit.foundation:concordance:0.2.0"
-    testCompileOnly "org.coordinatekit.foundation:concordance:0.2.0"
+    compileOnly "org.coordinatekit.foundation:concordance:0.3.0"
+    testCompileOnly "org.coordinatekit.foundation:concordance:0.3.0"
 }
 
 concordance {
@@ -130,8 +130,8 @@ The root project applies whichever plugins it wants and configures them in a blo
 
 ```groovy
 plugins {
-    id "org.coordinatekit.foundation.aggregate-javadoc" version "0.3.0-SNAPSHOT"
-    id "org.coordinatekit.foundation.aggregate-jacoco" version "0.3.0-SNAPSHOT"
+    id "org.coordinatekit.foundation.aggregate-javadoc" version "0.3.0"
+    id "org.coordinatekit.foundation.aggregate-jacoco" version "0.3.0"
 }
 
 repositories {
@@ -184,7 +184,7 @@ configurations {
 }
 
 dependencies {
-    conventions "org.coordinatekit.foundation:conventions:0.2.0"
+    conventions "org.coordinatekit.foundation:conventions:0.3.0"
 }
 
 def conventionsBase = "org/coordinatekit/foundation/conventions"
@@ -211,7 +211,7 @@ The example points `licenseHeaderFile` at the consumer's own file rather than at
 Nothing about the jar assumes Gradle or Spotless. Both entries are plain text and can be unpacked with any zip tool, checked into a repository, or fed to a different formatter:
 
 ```
-unzip -j conventions-0.2.0.jar 'org/coordinatekit/foundation/conventions/*' -d config/
+unzip -j conventions-0.3.0.jar 'org/coordinatekit/foundation/conventions/*' -d config/
 ```
 
 ## Third-party licenses
@@ -234,7 +234,7 @@ The build applies the plugin beside `application` and describes its licenses in 
 ```groovy
 plugins {
     id "application"
-    id "org.coordinatekit.foundation.third-party-licenses" version "0.2.0"
+    id "org.coordinatekit.foundation.third-party-licenses" version "0.3.0"
 }
 
 thirdPartyLicenses {

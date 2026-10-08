@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-10-08
+
+### Features
+
+- add third-party-licenses Gradle plugin ([#35](https://github.com/coordinatekit/coordinatekit-foundation/pull/35))
+- introduce aggregate-javadoc and aggregate-jacoco Gradle plugins ([#33](https://github.com/coordinatekit/coordinatekit-foundation/pull/33))
+- add changelog-gradle Gradle plugin ([#27](https://github.com/coordinatekit/coordinatekit-foundation/pull/27))
+
+### Build
+
+- bump se.bjurr.gitchangelog:git-changelog-gradle-plugin from 3.4.0 to 3.4.2 ([#34](https://github.com/coordinatekit/coordinatekit-foundation/pull/34))
+- bump com.gradleup.nmcp.aggregation from 1.6.1 to 1.6.2 ([#29](https://github.com/coordinatekit/coordinatekit-foundation/pull/29))
+- bump net.ltgt.gradle:gradle-errorprone-plugin from 5.1.0 to 5.1.1 ([#31](https://github.com/coordinatekit/coordinatekit-foundation/pull/31))
+- bump gradle-wrapper from 9.7.1 to 9.8.0 ([#30](https://github.com/coordinatekit/coordinatekit-foundation/pull/30))
+- bump org.slf4j:slf4j-api from 2.0.18 to 2.0.20 ([#28](https://github.com/coordinatekit/coordinatekit-foundation/pull/28))
+- bump com.diffplug.spotless from 8.10.0 to 8.10.3 ([#32](https://github.com/coordinatekit/coordinatekit-foundation/pull/32))
+
+[0.3.0]: https://github.com/coordinatekit/coordinatekit-foundation/releases/tag/v0.3.0
+
 ## [0.2.0] - 2026-09-27
 
 ### Features
