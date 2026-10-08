@@ -1,7 +1,5 @@
 import net.ltgt.gradle.errorprone.CheckSeverity
 import groovy.xml.XmlSlurper
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import org.coordinatekit.foundation.aggregate.jacoco.gradle.AggregateJacocoPlugin
 import org.coordinatekit.foundation.aggregate.javadoc.gradle.AggregateJavadocPlugin
 
@@ -371,16 +369,6 @@ configure(codeProjects) {
         reports {
             xml.required = true
             html.required = true
-        }
-        // An input, so that editing the stylesheet re-runs the report rather than restoring one from
-        // the build cache that carries the old copy.
-        def customCss = rootProject.file('.infra/jacoco-report.css')
-        inputs.files(customCss).withPropertyName("customCss")
-        doLast {
-            if (customCss.exists()) {
-                def reportCss = reports.html.outputLocation.file('jacoco-resources/report.css').get().asFile
-                Files.copy(customCss.toPath(), reportCss.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            }
         }
     }
 }
