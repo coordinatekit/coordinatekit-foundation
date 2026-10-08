@@ -7,7 +7,7 @@ jspecify = "1.0.0"
 # line with them. The build section's unsuffixed versions of the same coordinates run this
 # repository's own linting, so a current Error Prone exercises the check built against the target.
 errorprone-target = "2.50.0"
-errorprone-plugin-target = "5.1.0"
+errorprone-plugin-target = "5.1.1"
 
 # implementation — keep current
 gitchangelog-plugin = "3.4.0"
