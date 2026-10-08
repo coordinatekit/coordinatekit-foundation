@@ -19,7 +19,6 @@ import org.gradle.api.GradleException;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.file.RegularFile;
-import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
 import org.jspecify.annotations.Nullable;
 import se.bjurr.gitchangelog.plugin.gradle.GitChangelogTask;
@@ -31,7 +30,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.atomic.AtomicReference;
+import java.nio.file.StandardCopyOption;
 
 /**
  * Applies the git-changelog Gradle plugin and configures its {@code gitChangelog} task with
@@ -45,15 +44,18 @@ import java.util.concurrent.atomic.AtomicReference;
  * dependency is {@code implementation}, so it reaches the published POM.
  *
  * <p>
- * git-changelog's task logs every exception and still finishes green, so a template that fails to
- * render leaves the old {@code CHANGELOG.md} in place and nothing in the build says so. The task is
- * therefore wrapped in a guard: it sets the file aside and deletes it before the task runs, and
- * fails the build afterwards if the task did not write it back, restoring the old file so that a
- * failed run loses nothing.
+ * git-changelog's task fails the build on a template that cannot render, but it only logs a
+ * repository or file error and still finishes green, leaving nothing written. The task is therefore
+ * wrapped in a guard: the task renders into its temporary directory, and only once that file exists
+ * does the guard move it over {@code CHANGELOG.md}, failing the build when it does not. Either way
+ * a failed run leaves the previous {@code CHANGELOG.md} untouched.
  *
  * @see ChangelogExtension
  */
 public class ChangelogPlugin implements Plugin<Project> {
+    /** The name of the changelog file, both in the project directory and in the staging directory. */
+    private static final String CHANGELOG_FILE = "CHANGELOG.md";
+
     /** The format of the date shown beside each release. */
     private static final String DATE_FORMAT = "yyyy-MM-dd";
 
@@ -88,48 +90,49 @@ public class ChangelogPlugin implements Plugin<Project> {
             task.fromRevision.convention(extension.getFromRevision());
             task.handlebarsHelpers
                     .addAll(ChangelogHelpers.helpers(extension.getRepoUrl(), extension.getInitialRelease()));
-            guard(task, extension.getRepoUrl(), extension.getInitialRelease());
+            guard(task, extension.getRepoUrl(), extension.getInitialRelease(), project.file(CHANGELOG_FILE));
         });
     }
 
     /**
-     * Wraps the task's action so that a run that writes nothing fails the build.
+     * Points the task at a staging file and wraps its action so that only a written changelog reaches
+     * the project directory.
      *
      * @param task the {@code gitChangelog} task
      * @param repoUrl the repository URL, checked before the task runs
      * @param initialRelease the initial release file, checked before the task runs
+     * @param changelog the {@code CHANGELOG.md} the staged file replaces
      */
-    private static void guard(GitChangelogTask task, Provider<String> repoUrl, Provider<RegularFile> initialRelease) {
-        // Captured rather than read from the task inside the actions, which the configuration cache
-        // would otherwise have to serialize along with the project.
-        Property<File> output = task.file;
-        AtomicReference<byte @Nullable []> previous = new AtomicReference<>();
+    private static void guard(
+            GitChangelogTask task,
+            Provider<String> repoUrl,
+            Provider<RegularFile> initialRelease,
+            File changelog
+    ) {
+        // A plain File rather than the task's property, so the actions capture nothing the
+        // configuration cache would have to serialize along with the project.
+        File staged = new File(task.getTemporaryDir(), CHANGELOG_FILE);
+        task.file.set(staged);
         task.doFirst(first -> {
             RegularFile initial = initialRelease.getOrNull();
-            previous.set(
-                    prepare(
-                            repoUrl.getOrNull(),
-                            initial == null ? null : initial.getAsFile().toPath(),
-                            output.get().toPath()
-                    )
-            );
+            prepare(repoUrl.getOrNull(), initial == null ? null : initial.getAsFile().toPath(), staged.toPath());
         });
-        task.doLast(last -> verify(output.get().toPath(), previous.get()));
+        task.doLast(last -> publish(staged.toPath(), changelog.toPath()));
     }
 
     /**
-     * Sets the changelog aside before the task runs. Deleting it is what makes a failed run detectable:
-     * git-changelog would otherwise leave the previous file where {@link #verify} looks.
+     * Checks the configuration and clears the staging file before the task runs. Deleting a staged file
+     * left by an earlier run is what makes a failed run detectable: {@link #publish} would otherwise
+     * find that file and move it into place.
      *
      * @param repoUrl the repository URL, or {@code null} when none is configured
      * @param initialRelease the file appended after the last release, or {@code null} when none is
      *        configured
-     * @param changelog where the task writes the changelog
-     * @return the file's previous content, or {@code null} when it did not exist
+     * @param staged where the task writes the changelog
      * @throws GradleException if {@code repoUrl} is missing or blank, {@code initialRelease} is set but
-     *         does not exist, or the file cannot be replaced
+     *         does not exist, or the staging file cannot be cleared
      */
-    static byte @Nullable [] prepare(@Nullable String repoUrl, @Nullable Path initialRelease, Path changelog) {
+    static void prepare(@Nullable String repoUrl, @Nullable Path initialRelease, Path staged) {
         if (repoUrl == null || repoUrl.isBlank()) {
             throw new GradleException(
                     "foundationChangelog needs a repository URL for its links. Add repoUrl=https://github.com/<owner>/<repo>"
@@ -143,14 +146,31 @@ public class ChangelogPlugin implements Plugin<Project> {
             );
         }
         try {
-            if (!Files.exists(changelog)) {
-                return null;
-            }
-            byte[] content = Files.readAllBytes(changelog);
-            Files.delete(changelog);
-            return content;
+            Files.createDirectories(staged.getParent());
+            Files.deleteIfExists(staged);
         } catch (IOException e) {
-            throw new GradleException("Could not set " + changelog + " aside before regenerating it.", e);
+            throw new GradleException("Could not clear " + staged + " before regenerating the changelog.", e);
+        }
+    }
+
+    /**
+     * Moves the staged changelog over the project's, failing when the task did not write one.
+     *
+     * @param staged where the task should have written the changelog
+     * @param changelog the file the staged changelog replaces
+     * @throws GradleException if the staged file is missing after the task ran, or cannot be moved
+     */
+    static void publish(Path staged, Path changelog) {
+        if (!Files.exists(staged)) {
+            throw new GradleException(
+                    "gitChangelog did not write " + changelog
+                            + "; git-changelog logged the cause above, and the previous file is untouched."
+            );
+        }
+        try {
+            Files.move(staged, changelog, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            throw new GradleException("Could not move " + staged + " to " + changelog + ".", e);
         }
     }
 
@@ -169,31 +189,5 @@ public class ChangelogPlugin implements Plugin<Project> {
         } catch (IOException e) {
             throw new UncheckedIOException("Could not read " + TEMPLATE_RESOURCE, e);
         }
-    }
-
-    /**
-     * Checks that the task wrote the changelog, and puts the previous content back when it did not.
-     *
-     * @param changelog where the task should have written the changelog
-     * @param previous the content {@link #prepare} set aside, or {@code null} when there was none
-     * @throws GradleException if the file is missing after the task ran
-     */
-    static void verify(Path changelog, byte @Nullable [] previous) {
-        if (Files.exists(changelog)) {
-            return;
-        }
-        try {
-            if (previous != null) {
-                Files.write(changelog, previous);
-            }
-        } catch (IOException e) {
-            throw new GradleException(
-                    "gitChangelog did not write " + changelog + " and the previous file could not be restored.",
-                    e
-            );
-        }
-        throw new GradleException(
-                "gitChangelog did not write " + changelog + "; git-changelog logged the cause above."
-        );
     }
 }

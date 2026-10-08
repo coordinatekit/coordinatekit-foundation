@@ -15,10 +15,8 @@
  */
 package org.coordinatekit.foundation.changelog.gradle;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -40,7 +38,6 @@ import se.bjurr.gitchangelog.plugin.gradle.HelperParam;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -150,6 +147,42 @@ class ChangelogPluginTest {
     }
 
     @Test
+    void apply__leavesThePreviousFileWhenNothingIsWritten(@TempDir Path directory) throws IOException {
+        // ARRANGE //
+        // No history, so git-changelog finds no repository, logs the error, and finishes green.
+        writeFixture(directory, REPO_URL, "");
+        Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "previous");
+
+        // ACT //
+        BuildResult result = runner(directory).withArguments("gitChangelog").buildAndFail();
+
+        // ASSERT //
+        assertTrue(result.getOutput().contains("did not write"), result.getOutput());
+        assertEquals("previous", Files.readString(changelog), "a swallowed failure loses nothing");
+    }
+
+    @Test
+    void apply__leavesThePreviousFileWhenRenderFails(@TempDir Path directory) throws GitAPIException, IOException {
+        // ARRANGE //
+        writeFixture(directory, REPO_URL, """
+
+                foundationChangelog {
+                    initialRelease = file("initial.md")
+                }
+                """);
+        writeHistory(directory);
+        Files.createDirectory(directory.resolve("initial.md"));
+        Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "previous");
+
+        // ACT //
+        BuildResult result = runner(directory).withArguments("gitChangelog").buildAndFail();
+
+        // ASSERT //
+        assertTrue(result.getOutput().contains("Could not read the initial release file"), result.getOutput());
+        assertEquals("previous", Files.readString(changelog), "a failed render loses nothing");
+    }
+
+    @Test
     void apply__rendersTaggedHistory(@TempDir Path directory) throws GitAPIException, IOException {
         // ARRANGE //
         writeFixture(directory, REPO_URL, "");
@@ -192,56 +225,6 @@ class ChangelogPluginTest {
         assertFalse(changelog.contains("start the repository"), "chore commits have no section");
         assertTrue(latest.contains("[0.2.0]: " + REPO_URL + "/releases/tag/v0.2.0"), changelog);
         assertFalse(changelog.contains("(#12)"), "the pull request reference moves out of the description");
-    }
-
-    @Test
-    void apply__restoresThePreviousFileOnAReusedConfigurationCache(@TempDir Path directory)
-            throws GitAPIException, IOException {
-        // ARRANGE //
-        writeFixture(directory, REPO_URL, """
-
-                foundationChangelog {
-                    initialRelease = file("initial.md")
-                }
-                """);
-        writeHistory(directory);
-        Path initial = Files.writeString(directory.resolve("initial.md"), "## [0.0.1] - earlier\n");
-        GradleRunner runner = runner(directory).withArguments("gitChangelog", "--configuration-cache");
-        runner.build();
-        Path changelog = directory.resolve("CHANGELOG.md");
-        String rendered = Files.readString(changelog);
-        // The file is read when the template renders, so swapping it leaves the cached graph valid.
-        Files.delete(initial);
-        Files.createDirectory(initial);
-
-        // ACT //
-        BuildResult result = runner.buildAndFail();
-
-        // ASSERT //
-        assertTrue(result.getOutput().contains("Reusing configuration cache"), result.getOutput());
-        assertTrue(result.getOutput().contains("did not write"), result.getOutput());
-        assertEquals(rendered, Files.readString(changelog), "the backup survives the cache round trip");
-    }
-
-    @Test
-    void apply__restoresThePreviousFileWhenRenderFails(@TempDir Path directory) throws GitAPIException, IOException {
-        // ARRANGE //
-        writeFixture(directory, REPO_URL, """
-
-                foundationChangelog {
-                    initialRelease = file("initial.md")
-                }
-                """);
-        writeHistory(directory);
-        Files.createDirectory(directory.resolve("initial.md"));
-        Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "previous");
-
-        // ACT //
-        BuildResult result = runner(directory).withArguments("gitChangelog").buildAndFail();
-
-        // ASSERT //
-        assertTrue(result.getOutput().contains("did not write"), result.getOutput());
-        assertEquals("previous", Files.readString(changelog), "a failed render loses nothing");
     }
 
     @Test
@@ -375,59 +358,100 @@ class ChangelogPluginTest {
     @MethodSource
     void prepare__blankRepoUrl(BlankRepoUrlParameters parameters, @TempDir Path directory) throws IOException {
         // ARRANGE //
-        Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "kept");
+        Path staged = Files.writeString(directory.resolve("CHANGELOG.md"), "kept");
 
         // ACT //
         GradleException thrown = assertThrows(
                 GradleException.class,
-                () -> ChangelogPlugin.prepare(parameters.repoUrl(), null, changelog)
+                () -> ChangelogPlugin.prepare(parameters.repoUrl(), null, staged)
         );
 
         // ASSERT //
         assertTrue(thrown.getMessage().contains("repoUrl="), thrown.getMessage());
-        assertEquals("kept", Files.readString(changelog), "a rejected run leaves the file alone");
+        assertEquals("kept", Files.readString(staged), "a rejected run leaves the file alone");
+    }
+
+    @Test
+    void prepare__createsTheStagingDirectory(@TempDir Path directory) {
+        // ARRANGE //
+        Path staged = directory.resolve("tmp/gitChangelog/CHANGELOG.md");
+
+        // ACT //
+        ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, staged);
+
+        // ASSERT //
+        assertTrue(Files.isDirectory(staged.getParent()));
+        assertFalse(Files.exists(staged));
+    }
+
+    @Test
+    void prepare__deletesAStaleStagedFile(@TempDir Path directory) throws IOException {
+        // ARRANGE //
+        Path staged = Files.writeString(directory.resolve("CHANGELOG.md"), "stale");
+
+        // ACT //
+        ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, staged);
+
+        // ASSERT //
+        assertFalse(Files.exists(staged));
     }
 
     @Test
     void prepare__missingInitialRelease(@TempDir Path directory) throws IOException {
         // ARRANGE //
-        Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "kept");
+        Path staged = Files.writeString(directory.resolve("CHANGELOG.md"), "kept");
         Path initialRelease = directory.resolve("initial.md");
 
         // ACT //
         GradleException thrown = assertThrows(
                 GradleException.class,
-                () -> ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", initialRelease, changelog)
+                () -> ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", initialRelease, staged)
         );
 
         // ASSERT //
         assertTrue(thrown.getMessage().contains(initialRelease.toString()), thrown.getMessage());
-        assertEquals("kept", Files.readString(changelog), "a rejected run leaves the file alone");
+        assertEquals("kept", Files.readString(staged), "a rejected run leaves the file alone");
     }
 
     @Test
-    void prepare__returnsNothingWhenThereIsNoFile(@TempDir Path directory) {
+    void publish__failsWithoutOutput(@TempDir Path directory) throws IOException {
         // ARRANGE //
-        Path changelog = directory.resolve("CHANGELOG.md");
-
-        // ACT //
-        byte[] previous = ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, changelog);
-
-        // ASSERT //
-        assertNull(previous);
-    }
-
-    @Test
-    void prepare__setsAnExistingFileAside(@TempDir Path directory) throws IOException {
-        // ARRANGE //
+        Path staged = directory.resolve("staged.md");
         Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "old");
 
         // ACT //
-        byte[] previous = ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, changelog);
+        GradleException thrown = assertThrows(GradleException.class, () -> ChangelogPlugin.publish(staged, changelog));
 
         // ASSERT //
-        assertArrayEquals("old".getBytes(StandardCharsets.UTF_8), previous);
+        assertTrue(thrown.getMessage().contains("did not write " + changelog), thrown.getMessage());
+        assertEquals("old", Files.readString(changelog));
+    }
+
+    @Test
+    void publish__failsWithoutOutputWhenThereIsNoChangelog(@TempDir Path directory) {
+        // ARRANGE //
+        Path staged = directory.resolve("staged.md");
+        Path changelog = directory.resolve("CHANGELOG.md");
+
+        // ACT //
+        assertThrows(GradleException.class, () -> ChangelogPlugin.publish(staged, changelog));
+
+        // ASSERT //
         assertFalse(Files.exists(changelog));
+    }
+
+    @Test
+    void publish__replacesTheChangelog(@TempDir Path directory) throws IOException {
+        // ARRANGE //
+        Path staged = Files.writeString(directory.resolve("staged.md"), "new");
+        Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "old");
+
+        // ACT //
+        ChangelogPlugin.publish(staged, changelog);
+
+        // ASSERT //
+        assertEquals("new", Files.readString(changelog));
+        assertFalse(Files.exists(staged));
     }
 
     /**
@@ -500,46 +524,6 @@ class ChangelogPluginTest {
         assertTrue(template.contains("\n# Changelog\n"));
         assertTrue(template.contains("{{{repoUrl}}}/releases/tag/"));
         assertFalse(template.contains("__REPO_URL__"));
-    }
-
-    @Test
-    void verify__acceptsAWrittenFile(@TempDir Path directory) throws IOException {
-        // ARRANGE //
-        Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "new");
-
-        // ACT //
-        ChangelogPlugin.verify(changelog, "old".getBytes(StandardCharsets.UTF_8));
-
-        // ASSERT //
-        assertEquals("new", Files.readString(changelog));
-    }
-
-    @Test
-    void verify__failsWithoutOutputAndRestoresThePreviousFile(@TempDir Path directory) throws IOException {
-        // ARRANGE //
-        Path changelog = directory.resolve("CHANGELOG.md");
-
-        // ACT //
-        GradleException thrown = assertThrows(
-                GradleException.class,
-                () -> ChangelogPlugin.verify(changelog, "old".getBytes(StandardCharsets.UTF_8))
-        );
-
-        // ASSERT //
-        assertTrue(thrown.getMessage().contains("did not write " + changelog), thrown.getMessage());
-        assertEquals("old", Files.readString(changelog));
-    }
-
-    @Test
-    void verify__failsWithoutOutputWhenThereWasNoPreviousFile(@TempDir Path directory) {
-        // ARRANGE //
-        Path changelog = directory.resolve("CHANGELOG.md");
-
-        // ACT //
-        assertThrows(GradleException.class, () -> ChangelogPlugin.verify(changelog, null));
-
-        // ASSERT //
-        assertFalse(Files.exists(changelog));
     }
 
     /**
