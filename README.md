@@ -47,7 +47,7 @@ plugins {
 repoUrl=https://github.com/coordinatekit/crf
 ```
 
-`./gradlew gitChangelog` then rewrites `CHANGELOG.md` from the whole history. A build that sets no `repoUrl` fails when the task runs. git-changelog itself logs a rendering failure and finishes green, so the plugin deletes the file before the task and fails the build afterwards if the task did not write it, putting the previous file back.
+`./gradlew gitChangelog` then rewrites `CHANGELOG.md` from the whole history. A build that sets no `repoUrl` fails when the task runs. The task renders into its own temporary directory, and the plugin moves the result over `CHANGELOG.md` only once it exists, so a failed run fails the build and leaves the previous file untouched, even when git-changelog itself only logs the error and finishes green.
 
 A repository whose earlier releases predate conventional commits starts the changelog after the last of them and carries those releases in a Markdown file that is appended after the generated ones. Both properties are optional:
 
