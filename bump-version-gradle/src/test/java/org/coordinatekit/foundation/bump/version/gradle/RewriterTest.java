@@ -17,6 +17,7 @@ package org.coordinatekit.foundation.bump.version.gradle;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -107,7 +108,7 @@ class RewriterTest {
         VersionBump bump = VersionBump.of(parameters.to(), parameters.from(), "unused");
 
         // ACT //
-        String after = Rewriter.rewrite(parameters.before(), ANCHORS, bump).text();
+        String after = new Rewriter(ANCHORS, bump).rewrite(parameters.before()).text();
 
         // ASSERT //
         assertEquals(parameters.after(), after);
@@ -373,8 +374,8 @@ class RewriterTest {
         VersionBump bump = VersionBump.of(RELEASE, DEV, "unused");
 
         // ACT //
-        FileRewrite rewrite = Rewriter
-                .rewrite("version=2.0.0-SNAPSHOT\ncom.example.widgets:beta:1.2.3\nplain\n", ANCHORS, bump);
+        FileRewrite rewrite = new Rewriter(ANCHORS, bump)
+                .rewrite("version=2.0.0-SNAPSHOT\ncom.example.widgets:beta:1.2.3\nplain\n");
 
         // ASSERT //
         assertEquals(
@@ -698,11 +699,11 @@ class RewriterTest {
     void rewrite__repeatedBumpChangesNothing() {
         // ARRANGE //
         VersionBump bump = VersionBump.of(RELEASE, DEV, "unused");
-        String once = Rewriter.rewrite("version=2.0.0-SNAPSHOT\ncom.example.widgets:beta:1.2.3\n", ANCHORS, bump)
-                .text();
+        Rewriter rewriter = new Rewriter(ANCHORS, bump);
+        String once = rewriter.rewrite("version=2.0.0-SNAPSHOT\ncom.example.widgets:beta:1.2.3\n").text();
 
         // ACT //
-        FileRewrite again = Rewriter.rewrite(once, ANCHORS, bump);
+        FileRewrite again = rewriter.rewrite(once);
 
         // ASSERT //
         assertFalse(again.changed());
@@ -755,6 +756,20 @@ class RewriterTest {
                 releaseNotes.changed(),
                 "RELEASE.md shows the snapshot, so only a snapshot bump moves it"
         );
+    }
+
+    @Test
+    void rewrite__unchangedText() {
+        // ARRANGE //
+        VersionBump bump = VersionBump.of(RELEASE, DEV, "unused");
+        String text = "plain\nnothing to bump here\n";
+
+        // ACT //
+        FileRewrite rewrite = new Rewriter(ANCHORS, bump).rewrite(text);
+
+        // ASSERT //
+        assertFalse(rewrite.changed());
+        assertSame(text, rewrite.text());
     }
 
     static Stream<UnmatchedParameters> rewrite__unmatchedLines() {
@@ -846,7 +861,7 @@ class RewriterTest {
         VersionBump bump = VersionBump.of(parameters.to(), parameters.from(), "unused");
 
         // ACT //
-        List<Integer> lines = Rewriter.rewrite(parameters.text(), ANCHORS, bump).unmatched();
+        List<Integer> lines = new Rewriter(ANCHORS, bump).rewrite(parameters.text()).unmatched();
 
         // ASSERT //
         assertEquals(parameters.lines(), lines);
@@ -862,6 +877,6 @@ class RewriterTest {
      * @throws IOException if the file cannot be read
      */
     private static FileRewrite rewriteFile(Path file, Anchors anchors, VersionBump bump) throws IOException {
-        return Rewriter.rewrite(readFile(file), anchors, bump);
+        return new Rewriter(anchors, bump).rewrite(readFile(file));
     }
 }

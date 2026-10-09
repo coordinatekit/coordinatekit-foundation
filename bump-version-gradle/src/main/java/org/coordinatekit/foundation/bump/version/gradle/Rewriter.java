@@ -52,6 +52,10 @@ import java.util.stream.Collectors;
  * A line that names the project in an anchored form, carries a version that is not the new one, and
  * is targeted by the bump but matched by no rule is reported in {@link FileRewrite#unmatched}, so a
  * document format the rules do not know fails the bump and does not slip through unchanged.
+ *
+ * <p>
+ * An instance is built for one bump and holds the patterns that depend on it, compiled once, so
+ * rewriting every tracked file does not compile them again. It holds nothing else and is immutable.
  */
 final class Rewriter {
     /** The terminator of an archive name: a path separator, or a dot that does not begin a version. */
@@ -60,8 +64,14 @@ final class Rewriter {
     /** The artifact part of a coordinate. */
     private static final String ARTIFACT = "[A-Za-z0-9._-]+";
 
+    /** An {@code <artifactId>} element, with its trimmed text in group 1. */
+    private static final Pattern ARTIFACT_ID = Pattern.compile("<artifactId>\\s*([^<]*?)\\s*</artifactId>");
+
     /** A {@code <dependency>} element of a POM, across lines. */
     private static final Pattern DEPENDENCY = Pattern.compile("<dependency>.*?</dependency>", Pattern.DOTALL);
+
+    /** A {@code <groupId>} element, with its trimmed text in group 1. */
+    private static final Pattern GROUP_ID = Pattern.compile("<groupId>\\s*([^<]*?)\\s*</groupId>");
 
     /** A classifier that follows the version in a jar filename, such as {@code sources}. */
     private static final String JAR_CLASSIFIER = "(?:-[a-z]+)*";
@@ -96,7 +106,30 @@ final class Rewriter {
     private static final Pattern VERSION_TOKEN = Pattern
             .compile("(?<![0-9A-Za-z.])[0-9]+(?:\\.[0-9]+)+(?:[-+][A-Za-z0-9]+(?:\\.[0-9]+)*)*");
 
-    private Rewriter() {}
+    private final Pattern anchorPattern;
+
+    private final Anchors anchors;
+
+    private final VersionBump bump;
+
+    private final Pattern currentVersionElement;
+
+    private final List<LineRule> lineRules;
+
+    /**
+     * Compiles the patterns one bump needs.
+     *
+     * @param anchors the names the rules are anchored to
+     * @param bump the bump
+     */
+    Rewriter(Anchors anchors, VersionBump bump) {
+        this.anchors = anchors;
+        this.bump = bump;
+        this.anchorPattern = anchorPattern(anchors);
+        this.currentVersionElement = Pattern
+                .compile("<version>(?<ver>" + Pattern.quote(bump.current()) + ")</version>");
+        this.lineRules = lineRules(anchors, bump);
+    }
 
     /**
      * A named form of the project's version. The names are what a test, a report, and a counted edit
@@ -132,6 +165,13 @@ final class Rewriter {
         /** Only when the matched version is itself a snapshot. */
         SNAPSHOT_VERSION;
 
+        /**
+         * Decides whether a rule may claim a match.
+         *
+         * @param snapshotLine whether the line carries {@code -SNAPSHOT}
+         * @param version the version the rule matched
+         * @return {@code true} if this gate lets the rule claim the match
+         */
         boolean allows(boolean snapshotLine, String version) {
             return switch (this) {
                 case ALWAYS -> true;
@@ -340,8 +380,8 @@ final class Rewriter {
                     new Block(
                             lineOf(starts, dependency.start()),
                             lineOf(starts, dependency.end() - 1),
-                            tagText(body, "groupId"),
-                            tagText(body, "artifactId"),
+                            tagText(body, GROUP_ID),
+                            tagText(body, ARTIFACT_ID),
                             version
                     )
             );
@@ -354,12 +394,11 @@ final class Rewriter {
      * overlap.
      *
      * @param lines the file's lines
-     * @param rules the rules, as {@link #lineRules} orders them
      */
-    private static void claimLineRules(List<Line> lines, List<LineRule> rules) {
+    private void claimLineRules(List<Line> lines) {
         for (Line line : lines) {
             boolean snapshotLine = line.text().contains(VersionBump.SNAPSHOT);
-            for (LineRule rule : rules) {
+            for (LineRule rule : lineRules) {
                 Matcher matcher = rule.pattern().matcher(line.text());
                 while (matcher.find()) {
                     if (rule.gate().allows(snapshotLine, matcher.group("ver"))) {
@@ -378,23 +417,20 @@ final class Rewriter {
      *
      * @param lines the file's lines
      * @param blocks the file's dependency elements
-     * @param anchors the names the rules are anchored to
-     * @param bump the bump
      */
-    private static void claimPomVersions(List<Line> lines, List<Block> blocks, Anchors anchors, VersionBump bump) {
+    private void claimPomVersions(List<Line> lines, List<Block> blocks) {
         for (Block block : blocks) {
             VersionElement version = block.version();
-            if (version != null && editable(block, version, anchors, bump)) {
+            if (version != null && editable(block, version)) {
                 lines.get(version.line()).claim(new Span(version.start(), version.end(), Form.MAVEN_DEPENDENCY));
             }
         }
-        Pattern element = Pattern.compile("<version>(?<ver>" + Pattern.quote(bump.current()) + ")</version>");
         for (int i = 0; i < lines.size(); i++) {
             int index = i;
             if (blocks.stream().anyMatch(block -> block.covers(index))) {
                 continue;
             }
-            Matcher matcher = element.matcher(lines.get(i).text());
+            Matcher matcher = currentVersionElement.matcher(lines.get(i).text());
             while (matcher.find()) {
                 lines.get(i).claim(new Span(matcher.start("ver"), matcher.end("ver"), Form.VERSION_ELEMENT));
             }
@@ -407,11 +443,9 @@ final class Rewriter {
      *
      * @param block the block
      * @param version the block's version element
-     * @param anchors the names the rules are anchored to
-     * @param bump the bump
      * @return {@code true} if the version should become the new one
      */
-    private static boolean editable(Block block, VersionElement version, Anchors anchors, VersionBump bump) {
+    private boolean editable(Block block, VersionElement version) {
         boolean snapshot = version.text().endsWith(VersionBump.SNAPSHOT);
         return block.groupId().equals(anchors.group()) && anchors.modules().contains(block.artifactId())
                 && isLiteral(version.text()) && snapshot != bump.nextIsRelease();
@@ -507,16 +541,14 @@ final class Rewriter {
      * Rewrites one file's text.
      *
      * @param text the text, decoded so that every byte maps to one character
-     * @param anchors the names the rules are anchored to
-     * @param bump the bump
      * @return the new text with the edits that made it and the lines no rule recognised
      */
-    static FileRewrite rewrite(String text, Anchors anchors, VersionBump bump) {
+    FileRewrite rewrite(String text) {
         List<Line> lines = lines(text);
         List<Block> blocks = blocks(text, lines);
-        claimPomVersions(lines, blocks, anchors, bump);
-        claimLineRules(lines, lineRules(anchors, bump));
-        return splice(lines, bump, unmatched(lines, blocks, anchors, bump));
+        claimPomVersions(lines, blocks);
+        claimLineRules(lines);
+        return splice(text, lines, unmatched(lines, blocks));
     }
 
     /**
@@ -535,10 +567,9 @@ final class Rewriter {
      * Whether a line shows a version other than the new one.
      *
      * @param line the line
-     * @param bump the bump
      * @return {@code true} if some version-like token differs from the new version
      */
-    private static boolean showsOtherVersion(String line, VersionBump bump) {
+    private boolean showsOtherVersion(String line) {
         Matcher token = VERSION_TOKEN.matcher(line);
         while (token.find()) {
             if (!token.group().equals(bump.next())) {
@@ -550,14 +581,14 @@ final class Rewriter {
 
     /**
      * Replaces every claimed span with the new version and records each replacement that changed the
-     * text.
+     * text. When no replacement changed it, the original text is returned as is.
      *
+     * @param text the original text the lines were split from
      * @param lines the file's lines, with their spans claimed
-     * @param bump the bump
      * @param unmatched the lines {@link #unmatched} reported, carried into the result
      * @return the new text, its edits, and the unmatched lines
      */
-    private static FileRewrite splice(List<Line> lines, VersionBump bump, List<Integer> unmatched) {
+    private FileRewrite splice(String text, List<Line> lines, List<Integer> unmatched) {
         StringBuilder result = new StringBuilder();
         List<Edit> edits = new ArrayList<>();
         for (int i = 0; i < lines.size(); i++) {
@@ -577,18 +608,18 @@ final class Rewriter {
             }
             result.append(line, position, line.length());
         }
-        return new FileRewrite(result.toString(), edits, unmatched);
+        return new FileRewrite(edits.isEmpty() ? text : result.toString(), edits, unmatched);
     }
 
     /**
-     * Reads the trimmed text of the first element of a name.
+     * Reads the trimmed text of the first match of an element pattern.
      *
      * @param body the text to search
-     * @param tag the element name
+     * @param tag the pattern of the element, with its text in group 1
      * @return the element's text, or an empty string if there is none
      */
-    private static String tagText(String body, String tag) {
-        Matcher matcher = Pattern.compile("<" + tag + ">\\s*([^<]*?)\\s*</" + tag + ">").matcher(body);
+    private static String tagText(String body, Pattern tag) {
+        Matcher matcher = tag.matcher(body);
         return matcher.find() ? matcher.group(1) : "";
     }
 
@@ -597,10 +628,9 @@ final class Rewriter {
      * a snapshot on a snapshot bump.
      *
      * @param line the line
-     * @param bump the bump
      * @return {@code true} if the bump targets it
      */
-    private static boolean targetsLine(String line, VersionBump bump) {
+    private boolean targetsLine(String line) {
         return line.contains(VersionBump.SNAPSHOT) != bump.nextIsRelease();
     }
 
@@ -609,10 +639,9 @@ final class Rewriter {
      * snapshot bump.
      *
      * @param version the version as written
-     * @param bump the bump
      * @return {@code true} if the bump targets it
      */
-    private static boolean targetsVersion(String version, VersionBump bump) {
+    private boolean targetsVersion(String version) {
         return version.contains(VersionBump.SNAPSHOT) != bump.nextIsRelease();
     }
 
@@ -628,17 +657,14 @@ final class Rewriter {
      *
      * @param lines the file's lines, with their spans claimed
      * @param blocks the file's dependency elements
-     * @param anchors the names the rules are anchored to
-     * @param bump the bump
      * @return the 1-based line numbers, ascending
      */
-    private static List<Integer> unmatched(List<Line> lines, List<Block> blocks, Anchors anchors, VersionBump bump) {
-        Pattern anchor = anchorPattern(anchors);
+    private List<Integer> unmatched(List<Line> lines, List<Block> blocks) {
         Set<Integer> flagged = new TreeSet<>();
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i).text();
-            if (!lines.get(i).matched() && targetsLine(line, bump) && anchor.matcher(line).find()
-                    && showsOtherVersion(line, bump)) {
+            if (!lines.get(i).matched() && targetsLine(line) && anchorPattern.matcher(line).find()
+                    && showsOtherVersion(line)) {
                 flagged.add(i + 1);
             }
         }
@@ -646,7 +672,7 @@ final class Rewriter {
             VersionElement version = block.version();
             if (version != null && block.groupId().equals(anchors.group()) && !lines.get(version.line()).matched()
                     && isLiteral(version.text()) && !version.text().equals(bump.next())
-                    && targetsVersion(version.text(), bump)) {
+                    && targetsVersion(version.text())) {
                 flagged.add(version.line() + 1);
             }
         }
