@@ -114,8 +114,7 @@ class RewriterTest {
     }
 
     static Stream<RuleParameters> lineRules__activeForms() {
-        List<Form> always = List
-                .of(Form.VERSION_PROPERTY, Form.VERSION_ASSIGNMENT, Form.VERSION_ELEMENT, Form.COORDINATE);
+        List<Form> always = List.of(Form.VERSION_PROPERTY, Form.VERSION_ASSIGNMENT, Form.COORDINATE);
         List<Form> named = List.of(Form.JAR, Form.PLUGIN_ID, Form.ARCHIVE, Form.VERSION_LINE);
         return Stream.of(
                 new RuleParameters(
@@ -382,7 +381,6 @@ class RewriterTest {
                 List.of(new Rewriter.Edit(1, Form.VERSION_PROPERTY, DEV), new Rewriter.Edit(2, Form.COORDINATE, LAST)),
                 rewrite.edits()
         );
-        assertEquals(List.of(1, 2), List.copyOf(rewrite.matchedLines()));
         assertTrue(rewrite.changed());
     }
 
@@ -709,7 +707,7 @@ class RewriterTest {
         // ASSERT //
         assertFalse(again.changed());
         assertEquals(once, again.text());
-        assertTrue(Rewriter.unmatchedLines(once, ANCHORS, bump, again).isEmpty());
+        assertTrue(again.unmatched().isEmpty());
     }
 
     static Stream<RepositoryParameters> rewrite__repositoryDocs() {
@@ -740,10 +738,8 @@ class RewriterTest {
         FileRewrite releaseNotes = rewriteFile(root.resolve("RELEASE.md"), anchors, bump);
 
         // ASSERT //
-        assertTrue(Rewriter.unmatchedLines(readFile(root.resolve("README.md")), anchors, bump, readme).isEmpty());
-        assertTrue(
-                Rewriter.unmatchedLines(readFile(root.resolve("RELEASE.md")), anchors, bump, releaseNotes).isEmpty()
-        );
+        assertTrue(readme.unmatched().isEmpty());
+        assertTrue(releaseNotes.unmatched().isEmpty());
         assertEquals(
                 release,
                 readme.edits().stream().anyMatch(edit -> edit.form() == Form.COORDINATE),
@@ -761,20 +757,7 @@ class RewriterTest {
         );
     }
 
-    /**
-     * Rewrites a file under the given anchors without writing it back.
-     *
-     * @param file the file
-     * @param anchors the names the rules are anchored to
-     * @param bump the bump
-     * @return the rewrite
-     * @throws IOException if the file cannot be read
-     */
-    private static FileRewrite rewriteFile(Path file, Anchors anchors, VersionBump bump) throws IOException {
-        return Rewriter.rewrite(readFile(file), anchors, bump);
-    }
-
-    static Stream<UnmatchedParameters> unmatchedLines__reported() {
+    static Stream<UnmatchedParameters> rewrite__unmatchedLines() {
         return Stream.of(
                 new UnmatchedParameters(
                         "version with a qualifier no rule knows",
@@ -858,15 +841,27 @@ class RewriterTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource
-    void unmatchedLines__reported(UnmatchedParameters parameters) {
+    void rewrite__unmatchedLines(UnmatchedParameters parameters) {
         // ARRANGE //
         VersionBump bump = VersionBump.of(parameters.to(), parameters.from(), "unused");
-        FileRewrite rewrite = Rewriter.rewrite(parameters.text(), ANCHORS, bump);
 
         // ACT //
-        List<Integer> lines = Rewriter.unmatchedLines(parameters.text(), ANCHORS, bump, rewrite);
+        List<Integer> lines = Rewriter.rewrite(parameters.text(), ANCHORS, bump).unmatched();
 
         // ASSERT //
         assertEquals(parameters.lines(), lines);
+    }
+
+    /**
+     * Rewrites a file under the given anchors without writing it back.
+     *
+     * @param file the file
+     * @param anchors the names the rules are anchored to
+     * @param bump the bump
+     * @return the rewrite
+     * @throws IOException if the file cannot be read
+     */
+    private static FileRewrite rewriteFile(Path file, Anchors anchors, VersionBump bump) throws IOException {
+        return Rewriter.rewrite(readFile(file), anchors, bump);
     }
 }

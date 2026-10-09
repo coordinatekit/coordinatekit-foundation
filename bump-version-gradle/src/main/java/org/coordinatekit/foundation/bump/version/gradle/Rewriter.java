@@ -35,7 +35,9 @@ import java.util.stream.Collectors;
  * Each form is a pattern with a named group {@code ver}, and a rule replaces only that group. All
  * rules match against the original line, the {@code -SNAPSHOT} gate included, and the edits they
  * produce are spliced in together, with the first rule winning an overlap. No rule's output is
- * another rule's input, which is what keeps a repeated bump from changing anything.
+ * another rule's input, which is what keeps a repeated bump from changing anything. A POM's
+ * {@code <version>} elements are read apart from the line rules, because whether one moves depends
+ * on the dependency it sits in.
  *
  * <p>
  * The forms that track the version in development, the build's own declaration and the snapshot
@@ -48,7 +50,7 @@ import java.util.stream.Collectors;
  *
  * <p>
  * A line that names the project in an anchored form, carries a version that is not the new one, and
- * is targeted by the bump but matched by no rule is reported by {@link #unmatchedLines}, so a
+ * is targeted by the bump but matched by no rule is reported in {@link FileRewrite#unmatched}, so a
  * document format the rules do not know fails the bump and does not slip through unchanged.
  */
 final class Rewriter {
@@ -139,10 +141,9 @@ final class Rewriter {
      *
      * @param text the file's new text
      * @param edits the replacements made, in line order
-     * @param matchedLines the 1-based lines some rule matched, including those already at the new
-     *        version
+     * @param unmatched the 1-based lines, ascending, that name the project but that no rule matched
      */
-    record FileRewrite(String text, List<Edit> edits, Set<Integer> matchedLines) {
+    record FileRewrite(String text, List<Edit> edits, List<Integer> unmatched) {
         /**
          * Whether the rewrite changed the file.
          *
@@ -171,7 +172,45 @@ final class Rewriter {
      * @param artifactId the text of its {@code artifactId}, empty if it has none
      * @param version its {@code version} element, or {@code null} if it has none
      */
-    private record Block(int firstLine, int lastLine, String groupId, String artifactId, @Nullable Version version) {}
+    private record Block(int firstLine, int lastLine, String groupId, String artifactId, @Nullable Version version) {
+        /**
+         * Whether the element covers a line, in whole or in part.
+         *
+         * @param line the 0-based line
+         * @return {@code true} if the element opens on, closes on, or crosses it
+         */
+        boolean covers(int line) {
+            return firstLine <= line && line <= lastLine;
+        }
+    }
+
+    /**
+     * One line of the file and the spans claimed on it so far.
+     *
+     * @param text the line, with its terminator
+     * @param spans the spans to replace, in the order they were claimed
+     */
+    private record Line(String text, List<Span> spans) {
+        /**
+         * Claims a span unless one already claimed on this line overlaps it, so the first claim wins.
+         *
+         * @param span the span to claim
+         */
+        void claim(Span span) {
+            if (spans.stream().noneMatch(taken -> overlaps(taken, span))) {
+                spans.add(span);
+            }
+        }
+
+        /**
+         * Whether some rule matched this line, including a match already at the new version.
+         *
+         * @return {@code true} if any span was claimed on it
+         */
+        boolean matched() {
+            return !spans.isEmpty();
+        }
+    }
 
     /**
      * One span of a line that a rule will replace.
@@ -261,10 +300,10 @@ final class Rewriter {
      * @param lines the file split by {@link #lines}
      * @return the blocks in file order
      */
-    private static List<Block> blocks(String text, List<String> lines) {
+    private static List<Block> blocks(String text, List<Line> lines) {
         int[] starts = new int[lines.size()];
         for (int i = 1; i < starts.length; i++) {
-            starts[i] = starts[i - 1] + lines.get(i - 1).length();
+            starts[i] = starts[i - 1] + lines.get(i - 1).text().length();
         }
         List<Block> blocks = new ArrayList<>();
         Matcher dependency = DEPENDENCY.matcher(text);
@@ -289,6 +328,58 @@ final class Rewriter {
             );
         }
         return blocks;
+    }
+
+    /**
+     * Claims the version of every match whose gate allows it, rule by rule, so an earlier rule wins an
+     * overlap.
+     *
+     * @param lines the file's lines
+     * @param rules the rules, as {@link #lineRules} orders them
+     */
+    private static void claimLineRules(List<Line> lines, List<LineRule> rules) {
+        for (Line line : lines) {
+            boolean snapshotLine = line.text().contains(VersionBump.SNAPSHOT);
+            for (LineRule rule : rules) {
+                Matcher matcher = rule.pattern().matcher(line.text());
+                while (matcher.find()) {
+                    if (rule.gate().allows(snapshotLine, matcher.group("ver"))) {
+                        line.claim(new Span(matcher.start("ver"), matcher.end("ver"), rule.form()));
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Claims every {@code <version>} element of a POM that the bump rewrites. A project dependency's
+     * version is claimed when {@link #editable} allows it, and an element on a line outside every
+     * dependency is claimed when it holds exactly the current version. An element inside a dependency
+     * of another group is never claimed.
+     *
+     * @param lines the file's lines
+     * @param blocks the file's dependency elements
+     * @param anchors the names the rules are anchored to
+     * @param bump the bump
+     */
+    private static void claimPomVersions(List<Line> lines, List<Block> blocks, Anchors anchors, VersionBump bump) {
+        for (Block block : blocks) {
+            Version version = block.version();
+            if (version != null && editable(block, version, anchors, bump)) {
+                lines.get(version.line()).claim(new Span(version.start(), version.end(), Form.MAVEN_DEPENDENCY));
+            }
+        }
+        Pattern element = Pattern.compile("<version>(?<ver>" + Pattern.quote(bump.current()) + ")</version>");
+        for (int i = 0; i < lines.size(); i++) {
+            int index = i;
+            if (blocks.stream().anyMatch(block -> block.covers(index))) {
+                continue;
+            }
+            Matcher matcher = element.matcher(lines.get(i).text());
+            while (matcher.find()) {
+                lines.get(i).claim(new Span(matcher.start("ver"), matcher.end("ver"), Form.VERSION_ELEMENT));
+            }
+        }
     }
 
     /**
@@ -336,7 +427,6 @@ final class Rewriter {
         List<LineRule> rules = new ArrayList<>();
         rules.add(rule(Form.VERSION_PROPERTY, "version=(?<ver>" + current + ")" + RIGHT_GUARD, Gate.ALWAYS));
         rules.add(rule(Form.VERSION_ASSIGNMENT, "version\\s*=\\s*([\"'])(?<ver>" + current + ")\\1", Gate.ALWAYS));
-        rules.add(rule(Form.VERSION_ELEMENT, "<version>(?<ver>" + current + ")</version>", Gate.ALWAYS));
         rules.add(
                 rule(
                         Form.COORDINATE,
@@ -369,13 +459,13 @@ final class Rewriter {
      * @param text the text to split
      * @return the lines
      */
-    private static List<String> lines(String text) {
-        List<String> lines = new ArrayList<>();
+    private static List<Line> lines(String text) {
+        List<Line> lines = new ArrayList<>();
         int from = 0;
         while (from < text.length()) {
             int newline = text.indexOf('\n', from);
             int end = newline < 0 ? text.length() : newline + 1;
-            lines.add(text.substring(from, end));
+            lines.add(new Line(text.substring(from, end), new ArrayList<>()));
             from = end;
         }
         return lines;
@@ -398,72 +488,14 @@ final class Rewriter {
      * @param text the text, decoded so that every byte maps to one character
      * @param anchors the names the rules are anchored to
      * @param bump the bump
-     * @return the new text with the edits that made it
+     * @return the new text with the edits that made it and the lines no rule recognised
      */
     static FileRewrite rewrite(String text, Anchors anchors, VersionBump bump) {
-        List<String> lines = lines(text);
-        List<LineRule> rules = lineRules(anchors, bump);
-        List<List<Span>> spans = new ArrayList<>();
-        boolean[] inBlock = new boolean[lines.size()];
-        boolean[] matched = new boolean[lines.size()];
-        for (int i = 0; i < lines.size(); i++) {
-            spans.add(new ArrayList<>());
-        }
-
-        for (Block block : blocks(text, lines)) {
-            Arrays.fill(inBlock, block.firstLine(), block.lastLine() + 1, true);
-            Version version = block.version();
-            if (version != null && editable(block, version, anchors, bump)) {
-                spans.get(version.line()).add(new Span(version.start(), version.end(), Form.MAVEN_DEPENDENCY));
-                matched[version.line()] = true;
-            }
-        }
-
-        for (int i = 0; i < lines.size(); i++) {
-            String line = lines.get(i);
-            boolean snapshotLine = line.contains(VersionBump.SNAPSHOT);
-            for (LineRule rule : rules) {
-                if (rule.form() == Form.VERSION_ELEMENT && inBlock[i]) {
-                    continue;
-                }
-                Matcher matcher = rule.pattern().matcher(line);
-                while (matcher.find()) {
-                    if (!rule.gate().allows(snapshotLine, matcher.group("ver"))) {
-                        continue;
-                    }
-                    matched[i] = true;
-                    Span span = new Span(matcher.start("ver"), matcher.end("ver"), rule.form());
-                    if (spans.get(i).stream().noneMatch(taken -> overlaps(taken, span))) {
-                        spans.get(i).add(span);
-                    }
-                }
-            }
-        }
-
-        StringBuilder result = new StringBuilder(text.length());
-        List<Edit> edits = new ArrayList<>();
-        Set<Integer> matchedLines = new TreeSet<>();
-        for (int i = 0; i < lines.size(); i++) {
-            if (matched[i]) {
-                matchedLines.add(i + 1);
-            }
-            String line = lines.get(i);
-            int position = 0;
-            List<Span> ordered = spans.get(i).stream().sorted(Comparator.comparingInt(Span::start)).toList();
-            for (Span span : ordered) {
-                String from = line.substring(span.start(), span.end());
-                result.append(line, position, span.start());
-                if (from.equals(bump.next())) {
-                    result.append(from);
-                } else {
-                    result.append(bump.next());
-                    edits.add(new Edit(i + 1, span.form(), from));
-                }
-                position = span.end();
-            }
-            result.append(line, position, line.length());
-        }
-        return new FileRewrite(result.toString(), edits, matchedLines);
+        List<Line> lines = lines(text);
+        List<Block> blocks = blocks(text, lines);
+        claimPomVersions(lines, blocks, anchors, bump);
+        claimLineRules(lines, lineRules(anchors, bump));
+        return splice(lines, bump, unmatched(lines, blocks, anchors, bump));
     }
 
     /**
@@ -493,6 +525,38 @@ final class Rewriter {
             }
         }
         return false;
+    }
+
+    /**
+     * Replaces every claimed span with the new version and records each replacement that changed the
+     * text.
+     *
+     * @param lines the file's lines, with their spans claimed
+     * @param bump the bump
+     * @param unmatched the lines {@link #unmatched} reported, carried into the result
+     * @return the new text, its edits, and the unmatched lines
+     */
+    private static FileRewrite splice(List<Line> lines, VersionBump bump, List<Integer> unmatched) {
+        StringBuilder result = new StringBuilder();
+        List<Edit> edits = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i).text();
+            int position = 0;
+            List<Span> ordered = lines.get(i).spans().stream().sorted(Comparator.comparingInt(Span::start)).toList();
+            for (Span span : ordered) {
+                String from = line.substring(span.start(), span.end());
+                result.append(line, position, span.start());
+                if (from.equals(bump.next())) {
+                    result.append(from);
+                } else {
+                    result.append(bump.next());
+                    edits.add(new Edit(i + 1, span.form(), from));
+                }
+                position = span.end();
+            }
+            result.append(line, position, line.length());
+        }
+        return new FileRewrite(result.toString(), edits, unmatched);
     }
 
     /**
@@ -529,27 +593,25 @@ final class Rewriter {
      * one on a snapshot bump. A project dependency block whose version no rule edited is reported at
      * its {@code <version>} line.
      *
-     * @param text the file's original text
+     * @param lines the file's lines, with their spans claimed
+     * @param blocks the file's dependency elements
      * @param anchors the names the rules are anchored to
      * @param bump the bump
-     * @param rewrite the result of {@link #rewrite} on the same text
      * @return the 1-based line numbers, ascending
      */
-    static List<Integer> unmatchedLines(String text, Anchors anchors, VersionBump bump, FileRewrite rewrite) {
-        List<String> lines = lines(text);
+    private static List<Integer> unmatched(List<Line> lines, List<Block> blocks, Anchors anchors, VersionBump bump) {
         Pattern anchor = anchorPattern(anchors);
         Set<Integer> flagged = new TreeSet<>();
         for (int i = 0; i < lines.size(); i++) {
-            String line = lines.get(i);
-            if (!rewrite.matchedLines().contains(i + 1) && targeted(line, bump) && anchor.matcher(line).find()
+            String line = lines.get(i).text();
+            if (!lines.get(i).matched() && targeted(line, bump) && anchor.matcher(line).find()
                     && showsOtherVersion(line, bump)) {
                 flagged.add(i + 1);
             }
         }
-        for (Block block : blocks(text, lines)) {
+        for (Block block : blocks) {
             Version version = block.version();
-            if (version != null && block.groupId().equals(anchors.group())
-                    && !rewrite.matchedLines().contains(version.line() + 1)
+            if (version != null && block.groupId().equals(anchors.group()) && !lines.get(version.line()).matched()
                     && Character.isDigit(version.text().charAt(0)) && !version.text().equals(bump.next())
                     && targeted(version.text(), bump)) {
                 flagged.add(version.line() + 1);

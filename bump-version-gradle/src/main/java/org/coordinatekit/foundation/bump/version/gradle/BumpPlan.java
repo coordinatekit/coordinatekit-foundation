@@ -31,11 +31,9 @@ import java.util.TreeMap;
  * tested without a file system.
  *
  * @param files the rewrite of every file, by path
- * @param unmatched the lines each file has that name the project but that no rule matched, by path,
- *        for the files that have any
  * @param occurrences how many times the current version appears across all the files
  */
-record BumpPlan(SortedMap<String, FileRewrite> files, SortedMap<String, List<Integer>> unmatched, int occurrences) {
+record BumpPlan(SortedMap<String, FileRewrite> files, int occurrences) {
     /**
      * Returns the files the plan changes.
      *
@@ -90,19 +88,12 @@ record BumpPlan(SortedMap<String, FileRewrite> files, SortedMap<String, List<Int
      */
     static BumpPlan plan(SortedMap<String, String> texts, Anchors anchors, VersionBump bump) {
         SortedMap<String, FileRewrite> files = new TreeMap<>();
-        SortedMap<String, List<Integer>> unmatched = new TreeMap<>();
         int occurrences = 0;
         for (Map.Entry<String, String> file : texts.entrySet()) {
-            String text = file.getValue();
-            FileRewrite rewrite = Rewriter.rewrite(text, anchors, bump);
-            files.put(file.getKey(), rewrite);
-            List<Integer> lines = Rewriter.unmatchedLines(text, anchors, bump, rewrite);
-            if (!lines.isEmpty()) {
-                unmatched.put(file.getKey(), lines);
-            }
-            occurrences += count(text, bump.current());
+            files.put(file.getKey(), Rewriter.rewrite(file.getValue(), anchors, bump));
+            occurrences += count(file.getValue(), bump.current());
         }
-        return new BumpPlan(files, unmatched, occurrences);
+        return new BumpPlan(files, occurrences);
     }
 
     /**
@@ -154,6 +145,7 @@ record BumpPlan(SortedMap<String, FileRewrite> files, SortedMap<String, List<Int
                             + " Declare it in gradle.properties or the root build, or pass --from if it lives elsewhere."
             );
         }
+        SortedMap<String, List<Integer>> unmatched = unmatched();
         if (!unmatched.isEmpty()) {
             StringBuilder message = new StringBuilder(
                     "These lines name the project with a version that no rule recognises. Nothing was written."
@@ -166,5 +158,20 @@ record BumpPlan(SortedMap<String, FileRewrite> files, SortedMap<String, List<Int
             );
             throw new GradleException(message.toString());
         }
+    }
+
+    /**
+     * Returns the lines each file has that name the project but that no rule matched.
+     *
+     * @return the unmatched lines by path, for the files that have any
+     */
+    SortedMap<String, List<Integer>> unmatched() {
+        SortedMap<String, List<Integer>> unmatched = new TreeMap<>();
+        files.forEach((path, rewrite) -> {
+            if (!rewrite.unmatched().isEmpty()) {
+                unmatched.put(path, rewrite.unmatched());
+            }
+        });
+        return unmatched;
     }
 }
