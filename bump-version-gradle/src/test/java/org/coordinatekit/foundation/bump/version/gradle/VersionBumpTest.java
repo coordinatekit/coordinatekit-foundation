@@ -62,6 +62,13 @@ class VersionBumpTest {
     }
 
     @Test
+    void nextIsRelease__followsTheSuffix() {
+        // ASSERT //
+        assertTrue(VersionBump.of("1.0.0", null, "0.9.0").nextIsRelease());
+        assertFalse(VersionBump.of("1.1.0-SNAPSHOT", null, "1.0.0").nextIsRelease());
+    }
+
+    @Test
     void of__readsTheCurrentVersionFromTheBuild() {
         // ACT //
         VersionBump bump = VersionBump.of("1.0.0", null, "0.9.0-SNAPSHOT");
@@ -120,12 +127,5 @@ class VersionBumpTest {
         // ASSERT //
         assertEquals("0.5.0", bump.current());
         assertFalse(bump.currentFromBuild());
-    }
-
-    @Test
-    void releaseBump__followsTheSuffix() {
-        // ASSERT //
-        assertTrue(VersionBump.of("1.0.0", null, "0.9.0").releaseBump());
-        assertFalse(VersionBump.of("1.1.0-SNAPSHOT", null, "1.0.0").releaseBump());
     }
 }

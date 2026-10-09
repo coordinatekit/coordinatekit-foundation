@@ -66,11 +66,21 @@ final class Rewriter {
     /** A classifier that follows the version in a jar filename, such as {@code sources}. */
     private static final String JAR_CLASSIFIER = "(?:-[a-z]+)*";
 
-    /** A version that stops at the first point a classifier and {@code .jar} can follow. */
+    /**
+     * A version that stops at the first point a classifier and {@code .jar} can follow. It is
+     * {@link VersionBump#VERSION_PATTERN} with the qualifiers made lazy, so {@code x-1.2-sources.jar}
+     * reads {@code 1.2} and not {@code 1.2-sources}.
+     */
     private static final String LAZY_VERSION_PATTERN = "[0-9]+(?:\\.[0-9]+)*(?:[-+][A-Za-z0-9]+(?:\\.[0-9]+)*)*?";
 
     /** The character before a name that rules out a longer name ending in it. */
     private static final String LEFT_GUARD = "(?<![A-Za-z0-9._-])";
+
+    /** The start of a plugin id in a {@code plugins} block, up to the opening quote. */
+    private static final String PLUGIN_ID_START = "(?<![A-Za-z0-9_.-])id\\s*\\(?\\s*";
+
+    /** The segments a plugin id may carry after the project's group. */
+    private static final String PLUGIN_ID_SUBPATH = "(?:\\.[A-Za-z0-9_-]+)*";
 
     /** The character after a version that rules out a longer version beginning with it. */
     private static final String RIGHT_GUARD = "(?![A-Za-z0-9_+-]|\\.[A-Za-z0-9])";
@@ -78,7 +88,11 @@ final class Rewriter {
     /** The {@code <version>} element of a dependency, whose text may be anything but markup. */
     private static final Pattern VERSION_TAG = Pattern.compile("<version>\\s*(?<ver>[^<\\s]+)\\s*</version>");
 
-    /** A version-like token, used to decide whether a line shows a version at all. */
+    /**
+     * A version-like token, used to decide whether a line shows a version at all. Unlike
+     * {@link VersionBump#VERSION_PATTERN} it needs at least one dot and stands alone, so {@code line 3}
+     * and {@code abc1.2} are not versions.
+     */
     private static final Pattern VERSION_TOKEN = Pattern
             .compile("(?<![0-9A-Za-z.])[0-9]+(?:\\.[0-9]+)+(?:[-+][A-Za-z0-9]+(?:\\.[0-9]+)*)*");
 
@@ -172,7 +186,13 @@ final class Rewriter {
      * @param artifactId the text of its {@code artifactId}, empty if it has none
      * @param version its {@code version} element, or {@code null} if it has none
      */
-    private record Block(int firstLine, int lastLine, String groupId, String artifactId, @Nullable Version version) {
+    private record Block(
+            int firstLine,
+            int lastLine,
+            String groupId,
+            String artifactId,
+            @Nullable VersionElement version
+    ) {
         /**
          * Whether the element covers a line, in whole or in part.
          *
@@ -229,7 +249,7 @@ final class Rewriter {
      * @param end the offset after its last character, within the line
      * @param text the version as written
      */
-    private record Version(int line, int start, int end, String text) {}
+    private record VersionElement(int line, int start, int end, String text) {}
 
     /**
      * Adds the forms that name a module, a plugin, or the root project at some version.
@@ -238,28 +258,27 @@ final class Rewriter {
      * @param group the quoted group
      * @param modules the module alternation
      * @param root the quoted root project name
-     * @param version the version expression for every form but the jar
-     * @param jarVersion the version expression for a jar, which has to give way to a classifier
-     * @param gate the condition each rule carries
+     * @param exact the quoted version the forms are tied to, or {@code null} for any version on a line
+     *        that shows no snapshot, which also lets a jar's version give way to a classifier
      */
     private static void addNamedForms(
             List<LineRule> rules,
             String group,
             String modules,
             String root,
-            String version,
-            String jarVersion,
-            Gate gate
+            @Nullable String exact
     ) {
+        String version = exact == null ? VersionBump.VERSION_PATTERN : exact;
+        String jarVersion = exact == null ? LAZY_VERSION_PATTERN : exact;
+        Gate gate = exact == null ? Gate.NO_SNAPSHOT_ON_LINE : Gate.ALWAYS;
         rules.add(
                 rule(Form.JAR, LEFT_GUARD + modules + "-(?<ver>" + jarVersion + ")" + JAR_CLASSIFIER + "\\.jar", gate)
         );
         rules.add(
                 rule(
                         Form.PLUGIN_ID,
-                        "(?<![A-Za-z0-9_.-])id\\s*\\(?\\s*([\"'])" + group
-                                + "(?:\\.[A-Za-z0-9_-]+)*\\1\\s*\\)?\\s+version\\s+" + "([\"'])(?<ver>" + version
-                                + ")\\2",
+                        PLUGIN_ID_START + "([\"'])" + group + PLUGIN_ID_SUBPATH + "\\1\\s*\\)?\\s+version\\s+"
+                                + "([\"'])(?<ver>" + version + ")\\2",
                         gate
                 )
         );
@@ -287,9 +306,9 @@ final class Rewriter {
     private static Pattern anchorPattern(Anchors anchors) {
         String group = Pattern.quote(anchors.group());
         return Pattern.compile(
-                LEFT_GUARD + group + ":" + "|(?<![A-Za-z0-9_.-])id\\s*\\(?\\s*[\"']" + group
-                        + "(?:\\.[A-Za-z0-9_-]+)*[\"']" + "|" + LEFT_GUARD + alternation(anchors.modules()) + "-[0-9]"
-                        + "|" + LEFT_GUARD + Pattern.quote(anchors.rootName()) + "-[0-9]"
+                LEFT_GUARD + group + ":" + "|" + PLUGIN_ID_START + "[\"']" + group + PLUGIN_ID_SUBPATH + "[\"']" + "|"
+                        + LEFT_GUARD + alternation(anchors.modules()) + "-[0-9]" + "|" + LEFT_GUARD
+                        + Pattern.quote(anchors.rootName()) + "-[0-9]"
         );
     }
 
@@ -309,13 +328,13 @@ final class Rewriter {
         Matcher dependency = DEPENDENCY.matcher(text);
         while (dependency.find()) {
             String body = dependency.group();
-            Version version = null;
+            VersionElement version = null;
             Matcher element = VERSION_TAG.matcher(body);
             if (element.find()) {
                 int offset = dependency.start() + element.start("ver");
                 int line = lineOf(starts, offset);
                 int start = offset - starts[line];
-                version = new Version(line, start, start + element.group("ver").length(), element.group("ver"));
+                version = new VersionElement(line, start, start + element.group("ver").length(), element.group("ver"));
             }
             blocks.add(
                     new Block(
@@ -364,7 +383,7 @@ final class Rewriter {
      */
     private static void claimPomVersions(List<Line> lines, List<Block> blocks, Anchors anchors, VersionBump bump) {
         for (Block block : blocks) {
-            Version version = block.version();
+            VersionElement version = block.version();
             if (version != null && editable(block, version, anchors, bump)) {
                 lines.get(version.line()).claim(new Span(version.start(), version.end(), Form.MAVEN_DEPENDENCY));
             }
@@ -392,10 +411,20 @@ final class Rewriter {
      * @param bump the bump
      * @return {@code true} if the version should become the new one
      */
-    private static boolean editable(Block block, Version version, Anchors anchors, VersionBump bump) {
+    private static boolean editable(Block block, VersionElement version, Anchors anchors, VersionBump bump) {
         boolean snapshot = version.text().endsWith(VersionBump.SNAPSHOT);
         return block.groupId().equals(anchors.group()) && anchors.modules().contains(block.artifactId())
-                && version.text().matches(VersionBump.VERSION_PATTERN) && snapshot != bump.releaseBump();
+                && isLiteral(version.text()) && snapshot != bump.nextIsRelease();
+    }
+
+    /**
+     * Whether a version element holds a version written out, and not a property reference.
+     *
+     * @param text the element's text
+     * @return {@code true} if the whole text has the shape of a version
+     */
+    private static boolean isLiteral(String text) {
+        return text.matches(VersionBump.VERSION_PATTERN);
     }
 
     /**
@@ -432,22 +461,14 @@ final class Rewriter {
                         Form.COORDINATE,
                         LEFT_GUARD + group + ":" + ARTIFACT + ":(?<ver>" + VersionBump.VERSION_PATTERN + ")"
                                 + RIGHT_GUARD,
-                        bump.releaseBump() ? Gate.NO_SNAPSHOT_ON_LINE : Gate.SNAPSHOT_VERSION
+                        bump.nextIsRelease() ? Gate.NO_SNAPSHOT_ON_LINE : Gate.SNAPSHOT_VERSION
                 )
         );
-        if (bump.releaseBump()) {
-            addNamedForms(
-                    rules,
-                    group,
-                    modules,
-                    root,
-                    VersionBump.VERSION_PATTERN,
-                    LAZY_VERSION_PATTERN,
-                    Gate.NO_SNAPSHOT_ON_LINE
-            );
+        if (bump.nextIsRelease()) {
+            addNamedForms(rules, group, modules, root, null);
         }
         if (bump.currentIsSnapshot()) {
-            addNamedForms(rules, group, modules, root, current, current, Gate.ALWAYS);
+            addNamedForms(rules, group, modules, root, current);
         }
         return rules;
     }
@@ -575,12 +596,24 @@ final class Rewriter {
      * Whether a bump looks for this kind of line: one with no snapshot on a release bump, and one with
      * a snapshot on a snapshot bump.
      *
-     * @param line the line, or a version
+     * @param line the line
      * @param bump the bump
      * @return {@code true} if the bump targets it
      */
-    private static boolean targeted(String line, VersionBump bump) {
-        return line.contains(VersionBump.SNAPSHOT) != bump.releaseBump();
+    private static boolean targetsLine(String line, VersionBump bump) {
+        return line.contains(VersionBump.SNAPSHOT) != bump.nextIsRelease();
+    }
+
+    /**
+     * Whether a bump looks for this kind of version: a release on a release bump, and a snapshot on a
+     * snapshot bump.
+     *
+     * @param version the version as written
+     * @param bump the bump
+     * @return {@code true} if the bump targets it
+     */
+    private static boolean targetsVersion(String version, VersionBump bump) {
+        return version.contains(VersionBump.SNAPSHOT) != bump.nextIsRelease();
     }
 
     /**
@@ -604,16 +637,16 @@ final class Rewriter {
         Set<Integer> flagged = new TreeSet<>();
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i).text();
-            if (!lines.get(i).matched() && targeted(line, bump) && anchor.matcher(line).find()
+            if (!lines.get(i).matched() && targetsLine(line, bump) && anchor.matcher(line).find()
                     && showsOtherVersion(line, bump)) {
                 flagged.add(i + 1);
             }
         }
         for (Block block : blocks) {
-            Version version = block.version();
+            VersionElement version = block.version();
             if (version != null && block.groupId().equals(anchors.group()) && !lines.get(version.line()).matched()
-                    && Character.isDigit(version.text().charAt(0)) && !version.text().equals(bump.next())
-                    && targeted(version.text(), bump)) {
+                    && isLiteral(version.text()) && !version.text().equals(bump.next())
+                    && targetsVersion(version.text(), bump)) {
                 flagged.add(version.line() + 1);
             }
         }

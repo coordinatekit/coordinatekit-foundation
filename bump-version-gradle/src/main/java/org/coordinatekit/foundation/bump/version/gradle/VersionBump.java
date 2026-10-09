@@ -51,6 +51,15 @@ record VersionBump(String current, String next, boolean currentFromBuild) {
     }
 
     /**
+     * Whether the new version is a release.
+     *
+     * @return {@code true} if the new version does not end in {@code -SNAPSHOT}
+     */
+    boolean nextIsRelease() {
+        return !next.endsWith(SNAPSHOT);
+    }
+
+    /**
      * Validates the arguments of one bump.
      *
      * @param to the new version, as passed to {@code --to}
@@ -82,14 +91,5 @@ record VersionBump(String current, String next, boolean currentFromBuild) {
             throw new GradleException("The current version and the new version are the same (" + to + ").");
         }
         return new VersionBump(current, to, fromBuild);
-    }
-
-    /**
-     * Whether the new version is a release.
-     *
-     * @return {@code true} if the new version does not end in {@code -SNAPSHOT}
-     */
-    boolean releaseBump() {
-        return !next.endsWith(SNAPSHOT);
     }
 }

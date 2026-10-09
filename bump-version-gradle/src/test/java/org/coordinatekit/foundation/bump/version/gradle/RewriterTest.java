@@ -731,7 +731,7 @@ class RewriterTest {
                 Arrays.asList(System.getProperty("bumpVersion.modules").split(","))
         );
         VersionBump bump = VersionBump.of(parameters.to(), System.getProperty("bumpVersion.currentVersion"), "unused");
-        boolean release = bump.releaseBump();
+        boolean release = bump.nextIsRelease();
 
         // ACT //
         FileRewrite readme = rewriteFile(root.resolve("README.md"), anchors, bump);
