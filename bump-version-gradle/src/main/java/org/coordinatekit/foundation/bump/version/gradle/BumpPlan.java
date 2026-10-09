@@ -124,10 +124,11 @@ record BumpPlan(
      * Refuses a bump that would leave the repository half moved.
      *
      * <p>
-     * It fails, in this order, when the current version appears in no file, when no file would change,
-     * when no file declares the build's own version, and when a line names the project but no rule
-     * recognised it. The third check is skipped when the current version was given with {@code --from},
-     * as then the build's version is not what is being moved.
+     * It fails, in this order, when the current version appears in no file, when a line names the
+     * project but no rule recognised it, when no file would change, and when no file declares the
+     * build's own version. The unrecognised lines come before the last two because they say where to
+     * look, which those two cannot. The last check is skipped when the current version was given with
+     * {@code --from}, as then the build's version is not what is being moved.
      *
      * @param bump the bump
      * @throws GradleException for the first condition above that holds
@@ -135,6 +136,18 @@ record BumpPlan(
     void requireApplicable(VersionBump bump) {
         if (occurrences == 0) {
             throw new GradleException("The current version '" + bump.current() + "' is not in any tracked file.");
+        }
+        if (!unmatched.isEmpty()) {
+            StringBuilder message = new StringBuilder(
+                    "These lines name the project with a version that no rule recognises. Nothing was written."
+            );
+            unmatched.forEach(
+                    (path, lines) -> lines.forEach(line -> message.append("\n  ").append(path).append(':').append(line))
+            );
+            message.append(
+                    "\nAdd a rule to coordinatekit-foundation, or leave the file out with foundationVersion { exclude \"<path>\" }."
+            );
+            throw new GradleException(message.toString());
         }
         if (changedFiles.isEmpty()) {
             throw new GradleException(
@@ -148,18 +161,6 @@ record BumpPlan(
                             + "' as version=... or version = \"...\", so the build would still report it after the bump."
                             + " Declare it in gradle.properties or the root build, or pass --from if it lives elsewhere."
             );
-        }
-        if (!unmatched.isEmpty()) {
-            StringBuilder message = new StringBuilder(
-                    "These lines name the project with a version that no rule recognises. Nothing was written."
-            );
-            unmatched.forEach(
-                    (path, lines) -> lines.forEach(line -> message.append("\n  ").append(path).append(':').append(line))
-            );
-            message.append(
-                    "\nAdd a rule to coordinatekit-foundation, or leave the file out with foundationVersion { exclude \"<path>\" }."
-            );
-            throw new GradleException(message.toString());
         }
     }
 }

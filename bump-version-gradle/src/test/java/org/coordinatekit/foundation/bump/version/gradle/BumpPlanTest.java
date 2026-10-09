@@ -86,7 +86,7 @@ class BumpPlanTest {
     }
 
     @Test
-    void plan__keepsOnlyFilesWithUnmatchedLinesInTheirReport() {
+    void plan__separatesChangedFilesFromFilesWithUnmatchedLines() {
         // ARRANGE //
         VersionBump bump = VersionBump.of("2.0.0", "2.0.0-SNAPSHOT", "unused");
 
@@ -215,6 +215,25 @@ class BumpPlanTest {
                                 "ok\ncom.example.widgets:beta:1.0.0.Final\n"
                         ),
                         "README.md:2"
+                ),
+                new RefusedParameters(
+                        "unrecognised line wins over a missing declaration",
+                        "2.0.0-SNAPSHOT",
+                        true,
+                        files(
+                                "README.md",
+                                "ok\ncom.example.widgets:beta:1.0.0.Final\n",
+                                "NOTES.md",
+                                "2.0.0-SNAPSHOT\n"
+                        ),
+                        "README.md:2"
+                ),
+                new RefusedParameters(
+                        "unrecognised line wins over no change with an explicit current version",
+                        "1.0.0",
+                        false,
+                        files("README.md", "com.example.widgets:beta:1.0.0.Final\n"),
+                        "README.md:1"
                 )
         );
     }

@@ -41,7 +41,8 @@ import java.util.regex.Pattern;
  * Moves the build's version across every tracked file that names it. The task only gathers: it asks
  * Git which files are tracked, reads them, and hands their text to {@link BumpPlan}, which decides
  * everything, then writes the files that changed. Every refusal happens before the first write, so
- * a bump either lands whole or leaves the tree as it was.
+ * a refused bump leaves the tree as it was. A write that fails partway is not undone, and the files
+ * written before it stay bumped.
  *
  * <p>
  * Files are read and written as ISO-8859-1, so a byte that is not valid UTF-8 comes back unchanged.
