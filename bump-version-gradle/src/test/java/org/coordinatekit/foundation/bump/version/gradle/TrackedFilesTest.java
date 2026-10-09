@@ -111,7 +111,7 @@ class TrackedFilesTest {
     @Test
     void isExcluded__anyGlobCounts() {
         // ACT / ASSERT //
-        assertTrue(TrackedFiles.isExcluded("docs/x.md", List.of("src/**", "docs/*.md")));
+        assertTrue(TrackedFiles.isExcluded("docs/x.md", TrackedFiles.excludePatterns(List.of("src/**", "docs/*.md"))));
     }
 
     static Stream<ExcludedParameters> isExcluded__globs() {
@@ -146,13 +146,16 @@ class TrackedFilesTest {
     @MethodSource
     void isExcluded__globs(ExcludedParameters parameters) {
         // ACT / ASSERT //
-        assertEquals(parameters.excluded(), TrackedFiles.isExcluded(parameters.path(), List.of(parameters.glob())));
+        assertEquals(
+                parameters.excluded(),
+                TrackedFiles.isExcluded(parameters.path(), TrackedFiles.excludePatterns(List.of(parameters.glob())))
+        );
     }
 
     @Test
     void isExcluded__noGlobsExcludesNothing() {
         // ACT / ASSERT //
-        assertFalse(TrackedFiles.isExcluded("README.md", List.of()));
+        assertFalse(TrackedFiles.isExcluded("README.md", TrackedFiles.excludePatterns(List.of())));
     }
 
     @Test

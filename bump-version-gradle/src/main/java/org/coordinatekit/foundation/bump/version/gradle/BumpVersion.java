@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.regex.Pattern;
 
 /**
  * Moves the build's version across every tracked file that names it. The task only gathers: it asks
@@ -152,8 +153,9 @@ public abstract class BumpVersion extends DefaultTask {
      */
     private static SortedMap<String, String> read(Path root, List<String> excludes) {
         SortedMap<String, String> texts = new TreeMap<>();
+        List<Pattern> patterns = TrackedFiles.excludePatterns(excludes);
         for (String path : TrackedFiles.list(root)) {
-            if (TrackedFiles.isExcluded(path, excludes)) {
+            if (TrackedFiles.isExcluded(path, patterns)) {
                 continue;
             }
             try {

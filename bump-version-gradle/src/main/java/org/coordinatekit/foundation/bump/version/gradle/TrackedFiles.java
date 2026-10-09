@@ -49,6 +49,23 @@ final class TrackedFiles {
     private TrackedFiles() {}
 
     /**
+     * Compiles a build's exclusion globs into the patterns {@link #isExcluded} matches against.
+     *
+     * <p>
+     * Paths and globs use {@code /} and are relative to the project directory. {@code *} matches any
+     * run of characters within one path segment, {@code ?} matches one such character, and a double
+     * {@code *} matches across segments. A double {@code *} segment at the start also matches at the
+     * root, so a glob made of it, a slash, and {@code *.md} covers {@code README.md} as well as
+     * {@code docs/guide.md}. A glob ending in {@code /} excludes everything under that directory.
+     *
+     * @param globs the exclusion globs
+     * @return one pattern per glob, in the same order
+     */
+    static List<Pattern> excludePatterns(List<String> globs) {
+        return globs.stream().map(TrackedFiles::toPattern).toList();
+    }
+
+    /**
      * Whether content looks like a binary file, which is the case when a NUL byte appears in its first
      * {@value #BINARY_WINDOW} bytes.
      *
@@ -66,21 +83,14 @@ final class TrackedFiles {
     }
 
     /**
-     * Whether a path matches any of a build's exclusion globs.
-     *
-     * <p>
-     * Paths and globs use {@code /} and are relative to the project directory. {@code *} matches any
-     * run of characters within one path segment, {@code ?} matches one such character, and a double
-     * {@code *} matches across segments. A double {@code *} segment at the start also matches at the
-     * root, so a glob made of it, a slash, and {@code *.md} covers {@code README.md} as well as
-     * {@code docs/guide.md}. A glob ending in {@code /} excludes everything under that directory.
+     * Whether a path matches any of a build's exclusion patterns.
      *
      * @param path the path, relative to the project directory
-     * @param globs the exclusion globs
-     * @return {@code true} if some glob matches the whole path
+     * @param patterns the patterns from {@link #excludePatterns}
+     * @return {@code true} if some pattern matches the whole path
      */
-    static boolean isExcluded(String path, List<String> globs) {
-        return globs.stream().anyMatch(glob -> toPattern(glob).matcher(path).matches());
+    static boolean isExcluded(String path, List<Pattern> patterns) {
+        return patterns.stream().anyMatch(pattern -> pattern.matcher(path).matches());
     }
 
     /**

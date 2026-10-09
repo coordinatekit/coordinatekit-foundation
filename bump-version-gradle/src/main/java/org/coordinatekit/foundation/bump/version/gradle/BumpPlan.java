@@ -31,24 +31,10 @@ import java.util.TreeMap;
  * tested without a file system.
  *
  * @param files the rewrite of every file, by path
+ * @param changedFiles the rewrites that have at least one edit, by path
  * @param occurrences how many times the current version appears across all the files
  */
-record BumpPlan(SortedMap<String, FileRewrite> files, int occurrences) {
-    /**
-     * Returns the files the plan changes.
-     *
-     * @return the rewrites that have at least one edit, by path
-     */
-    SortedMap<String, FileRewrite> changedFiles() {
-        SortedMap<String, FileRewrite> changed = new TreeMap<>();
-        files.forEach((path, rewrite) -> {
-            if (rewrite.changed()) {
-                changed.put(path, rewrite);
-            }
-        });
-        return changed;
-    }
-
+record BumpPlan(SortedMap<String, FileRewrite> files, SortedMap<String, FileRewrite> changedFiles, int occurrences) {
     /**
      * Counts the non-overlapping occurrences of a string.
      *
@@ -88,12 +74,17 @@ record BumpPlan(SortedMap<String, FileRewrite> files, int occurrences) {
      */
     static BumpPlan plan(SortedMap<String, String> texts, Anchors anchors, VersionBump bump) {
         SortedMap<String, FileRewrite> files = new TreeMap<>();
+        SortedMap<String, FileRewrite> changed = new TreeMap<>();
         int occurrences = 0;
         for (Map.Entry<String, String> file : texts.entrySet()) {
-            files.put(file.getKey(), Rewriter.rewrite(file.getValue(), anchors, bump));
+            FileRewrite rewrite = Rewriter.rewrite(file.getValue(), anchors, bump);
+            files.put(file.getKey(), rewrite);
+            if (rewrite.changed()) {
+                changed.put(file.getKey(), rewrite);
+            }
             occurrences += count(file.getValue(), bump.current());
         }
-        return new BumpPlan(files, occurrences);
+        return new BumpPlan(files, changed, occurrences);
     }
 
     /**

@@ -54,7 +54,6 @@ public class BumpVersionPlugin implements Plugin<Project> {
             );
         }
         BumpVersionExtension extension = project.getExtensions().create(EXTENSION_NAME, BumpVersionExtension.class);
-        extension.getExcludes().convention(List.of());
 
         List<String> modules = project.getSubprojects().stream().map(Project::getName).sorted().toList();
         project.getTasks().register(TASK_NAME, BumpVersion.class, task -> {
