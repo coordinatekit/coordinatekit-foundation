@@ -16,11 +16,13 @@
 package org.coordinatekit.foundation.bump.version.gradle;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.dircache.DirCache;
 import org.gradle.api.GradleException;
 import org.gradle.api.Project;
 import org.gradle.testfixtures.ProjectBuilder;
@@ -28,9 +30,11 @@ import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -281,6 +285,7 @@ class BumpVersionPluginTest {
         // ARRANGE //
         writeFoundationFixture(directory, "1.2.0-SNAPSHOT", "");
         Files.writeString(directory.resolve("NOTES.md"), "version=1.2.0-SNAPSHOT\n");
+        Files.write(directory.resolve("blob.bin"), "\0version=1.2.0-SNAPSHOT\n".getBytes(StandardCharsets.ISO_8859_1));
         track(directory, "NOTES.md");
         Map<String, String> before = read(directory);
 
@@ -295,8 +300,12 @@ class BumpVersionPluginTest {
         assertEquals(before.get("RELEASE.md"), Files.readString(directory.resolve("RELEASE.md")));
         assertEquals("version=1.2.0-SNAPSHOT\n", Files.readString(directory.resolve("NOTES.md")));
         assertTrue(result.getOutput().contains("Updated version: 1.2.0-SNAPSHOT -> 1.2.0"), result.getOutput());
-        assertTrue(result.getOutput().contains("Found "), result.getOutput());
+        // gradle.properties and RELEASE.md name the current version once each. The untracked NOTES.md and
+        // the
+        // binary blob.bin name it too and are not counted.
+        assertTrue(result.getOutput().contains("Found 2 occurrence(s) of '1.2.0-SNAPSHOT'"), result.getOutput());
         assertTrue(result.getOutput().contains("README.md ("), result.getOutput());
+        assertEquals(before.get("blob.bin"), read(directory).get("blob.bin"));
     }
 
     @Test
@@ -329,6 +338,31 @@ class BumpVersionPluginTest {
         // ASSERT //
         assertTrue(result.getOutput().contains("Reusing configuration cache"), result.getOutput());
         assertTrue(Files.readString(directory.resolve("gradle.properties")).contains("version=1.2.0\n"));
+    }
+
+    @Test
+    void bumpVersion__warnsAboutAnExcludeThatMatchesNothing(@TempDir Path directory)
+            throws GitAPIException, IOException {
+        // ARRANGE //
+        writeFoundationFixture(directory, "1.2.0-SNAPSHOT", """
+
+                foundationVersion {
+                    exclude "./docs/**", "README.md"
+                }
+                """);
+        Files.createDirectories(directory.resolve("docs"));
+        Files.writeString(directory.resolve("docs/guide.md"), "com.example.widgets:beta:1.1.0\n");
+        track(directory);
+
+        // ACT //
+        BuildResult result = runner(directory).withArguments("bumpVersion", "--to=1.2.0").build();
+
+        // ASSERT //
+        String output = result.getOutput();
+        assertTrue(output.contains("The exclude './docs/**' matches no tracked file"), output);
+        assertFalse(output.contains("The exclude 'README.md'"), output);
+        // The misspelt glob protected nothing, which is the harm the warning is there to point at.
+        assertEquals("com.example.widgets:beta:1.2.0\n", Files.readString(directory.resolve("docs/guide.md")));
     }
 
     @Test
@@ -368,16 +402,22 @@ class BumpVersionPluginTest {
     }
 
     /**
-     * Reads the files a test compares across a bump.
+     * Reads every file the fixture's Git index tracks, so a comparison across a bump covers the whole
+     * tracked tree and not a chosen few. The bytes are decoded as ISO-8859-1, which keeps any byte
+     * intact, a binary file's included.
      *
-     * @param directory the fixture's project directory
-     * @return the files' text, by name
-     * @throws IOException if a file cannot be read
+     * @param directory the fixture's project directory, already a Git repository
+     * @return the files' content, by path
+     * @throws IOException if the index or a file cannot be read
      */
     private static Map<String, String> read(Path directory) throws IOException {
         Map<String, String> files = new LinkedHashMap<>();
-        for (String name : List.of("README.md", "RELEASE.md", "build.gradle", "gradle.properties")) {
-            files.put(name, Files.readString(directory.resolve(name)));
+        try (Git git = Git.open(directory.toFile())) {
+            DirCache index = git.getRepository().readDirCache();
+            for (int i = 0; i < index.getEntryCount(); i++) {
+                String path = index.getEntry(i).getPathString();
+                files.put(path, new String(Files.readAllBytes(directory.resolve(path)), StandardCharsets.ISO_8859_1));
+            }
         }
         return files;
     }
@@ -386,12 +426,12 @@ class BumpVersionPluginTest {
      * Writes files back as they were.
      *
      * @param directory the fixture's project directory
-     * @param files the text to restore, by name
+     * @param files the content to restore, by path, as {@link #read} returns it
      * @throws IOException if a file cannot be written
      */
     private static void restore(Path directory, Map<String, String> files) throws IOException {
         for (Map.Entry<String, String> file : files.entrySet()) {
-            Files.writeString(directory.resolve(file.getKey()), file.getValue());
+            Files.write(directory.resolve(file.getKey()), file.getValue().getBytes(StandardCharsets.ISO_8859_1));
         }
     }
 
@@ -433,7 +473,7 @@ class BumpVersionPluginTest {
      * @param modules the subprojects to include
      * @throws IOException if the fixture cannot be written
      */
-    private static void writeFixture(Path directory, String version, String block, String... modules)
+    private static void writeFixture(Path directory, @Nullable String version, String block, String... modules)
             throws IOException {
         StringBuilder settings = new StringBuilder("rootProject.name = \"widgets\"\n");
         for (String module : modules) {

@@ -34,6 +34,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.SortedMap;
+import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
 
@@ -68,7 +69,12 @@ public abstract class BumpVersion extends DefaultTask {
         Anchors anchors = Anchors.of(getProjectGroup().get(), getRootProjectName().get(), getModules().get());
         Path root = getRootDirectory().get().getAsFile().toPath();
 
-        BumpPlan plan = BumpPlan.plan(read(root, getExcludes().get()), anchors, bump);
+        SortedSet<String> tracked = TrackedFiles.list(root);
+        for (String glob : TrackedFiles.unusedGlobs(tracked, getExcludes().get())) {
+            getLogger().warn("The exclude '{}' matches no tracked file, so it protects nothing.", glob);
+        }
+
+        BumpPlan plan = BumpPlan.plan(read(root, tracked, getExcludes().get()), anchors, bump);
         getLogger().lifecycle("Found {} occurrence(s) of '{}' to evaluate", plan.occurrences(), bump.current());
         plan.requireApplicable(bump);
         write(root, plan);
@@ -149,13 +155,14 @@ public abstract class BumpVersion extends DefaultTask {
      * Reads the tracked text files that are not excluded.
      *
      * @param root the project directory
+     * @param tracked the paths Git tracks under {@code root}
      * @param excludes the exclusion globs
      * @return the files' text, decoded as ISO-8859-1, by path
      */
-    private static SortedMap<String, String> read(Path root, List<String> excludes) {
+    private static SortedMap<String, String> read(Path root, SortedSet<String> tracked, List<String> excludes) {
         SortedMap<String, String> texts = new TreeMap<>();
         List<Pattern> patterns = TrackedFiles.excludePatterns(excludes);
-        for (String path : TrackedFiles.list(root)) {
+        for (String path : tracked) {
             if (TrackedFiles.isExcluded(path, patterns)) {
                 continue;
             }

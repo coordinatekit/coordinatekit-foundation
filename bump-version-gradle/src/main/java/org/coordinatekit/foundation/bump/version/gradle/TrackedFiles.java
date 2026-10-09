@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -206,5 +207,21 @@ final class TrackedFiles {
             }
         }
         return paths;
+    }
+
+    /**
+     * Finds the exclusion globs that match no tracked file. A glob that matches nothing is usually a
+     * typo, or a path written with a leading {@code ./} or {@code /}, and the files it was meant to
+     * protect are then rewritten.
+     *
+     * @param paths every tracked path, before any exclusion is applied
+     * @param globs the exclusion globs
+     * @return the globs no path matches, in the order given
+     */
+    static List<String> unusedGlobs(Collection<String> paths, List<String> globs) {
+        return globs.stream().filter(glob -> {
+            Pattern pattern = toPattern(glob);
+            return paths.stream().noneMatch(path -> pattern.matcher(path).matches());
+        }).toList();
     }
 }

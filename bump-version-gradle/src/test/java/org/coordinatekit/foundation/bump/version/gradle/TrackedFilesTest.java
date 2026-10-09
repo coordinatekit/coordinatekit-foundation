@@ -70,6 +70,15 @@ class TrackedFilesTest {
     private record BinaryParameters(String name, int length, int nulAt, boolean binary) {}
 
     /**
+     * One exclusion glob against a fixed set of tracked paths.
+     *
+     * @param name what the case shows
+     * @param glob the glob
+     * @param used whether the glob matches some tracked path
+     */
+    private record UnusedParameters(String name, String glob, boolean used) {}
+
+    /**
      * Builds an index entry for a path, with an object id that is never read.
      *
      * @param path the path
@@ -334,6 +343,46 @@ class TrackedFilesTest {
             // ASSERT //
             assertEquals(List.of("real.txt"), paths);
         }
+    }
+
+    static Stream<UnusedParameters> unusedGlobs__globs() {
+        return Stream.of(
+                new UnusedParameters("matching glob", "docs/**", true),
+                new UnusedParameters("typo in a directory", "doc/**", false),
+                new UnusedParameters("leading dot slash", "./docs/**", false),
+                new UnusedParameters("leading slash", "/docs/guide.md", false),
+                new UnusedParameters("exact path", "docs/guide.md", true),
+                new UnusedParameters("directory with a trailing slash", "docs/", true),
+                new UnusedParameters("glob that matches a directory name only", "docs", false)
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource
+    void unusedGlobs__globs(UnusedParameters parameters) {
+        // ARRANGE //
+        List<String> paths = List.of("README.md", "docs/guide.md");
+
+        // ACT //
+        List<String> unused = TrackedFiles.unusedGlobs(paths, List.of(parameters.glob()));
+
+        // ASSERT //
+        assertEquals(parameters.used() ? List.of() : List.of(parameters.glob()), unused);
+    }
+
+    @Test
+    void unusedGlobs__keepsTheOrderGiven() {
+        // ACT / ASSERT //
+        assertEquals(
+                List.of("z/**", "a/**"),
+                TrackedFiles.unusedGlobs(List.of("docs/guide.md"), List.of("z/**", "docs/**", "a/**"))
+        );
+    }
+
+    @Test
+    void unusedGlobs__noGlobsReportsNothing() {
+        // ACT / ASSERT //
+        assertEquals(List.of(), TrackedFiles.unusedGlobs(List.of("README.md"), List.of()));
     }
 
     /**
