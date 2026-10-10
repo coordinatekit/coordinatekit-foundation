@@ -237,16 +237,15 @@ class TrackedFilesTest {
         // ARRANGE //
         Path main = Files.createDirectory(directory.resolve("main"));
         Path worktree = Files.createDirectory(directory.resolve("wt"));
-        try (Git git = Git.init().setDirectory(main.toFile()).setInitialBranch("main").call()) {
-            Path admin = Files.createDirectories(main.resolve(".git/worktrees/wt"));
-            Files.writeString(worktree.resolve(".git"), "gitdir: " + admin.toAbsolutePath() + "\n");
-            Files.writeString(admin.resolve("commondir"), "../..\n");
-            Files.writeString(admin.resolve("HEAD"), "ref: refs/heads/main\n");
-            Files.writeString(admin.resolve("gitdir"), worktree.resolve(".git").toAbsolutePath() + "\n");
-            Files.writeString(worktree.resolve("linked.txt"), "l");
-            Files.writeString(main.resolve("main-only.txt"), "m");
-            writeIndex(admin.resolve("index"), entry("linked.txt", DirCacheEntry.STAGE_0, FileMode.REGULAR_FILE));
-        }
+        Git.init().setDirectory(main.toFile()).setInitialBranch("main").call().close();
+        Path admin = Files.createDirectories(main.resolve(".git/worktrees/wt"));
+        Files.writeString(worktree.resolve(".git"), "gitdir: " + admin.toAbsolutePath() + "\n");
+        Files.writeString(admin.resolve("commondir"), "../..\n");
+        Files.writeString(admin.resolve("HEAD"), "ref: refs/heads/main\n");
+        Files.writeString(admin.resolve("gitdir"), worktree.resolve(".git").toAbsolutePath() + "\n");
+        Files.writeString(worktree.resolve("linked.txt"), "l");
+        Files.writeString(main.resolve("main-only.txt"), "m");
+        writeIndex(admin.resolve("index"), entry("linked.txt", DirCacheEntry.STAGE_0, FileMode.REGULAR_FILE));
 
         // ACT //
         List<String> paths = List.copyOf(TrackedFiles.list(worktree));

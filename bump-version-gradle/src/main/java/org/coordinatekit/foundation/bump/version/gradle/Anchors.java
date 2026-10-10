@@ -76,11 +76,7 @@ record Anchors(String group, String rootName, List<String> modules) {
                 .filter(name -> !name.isBlank())
                 .distinct()
                 .map(Anchors::encode)
-                .sorted(
-                        Comparator.<String>comparingInt(String::length)
-                                .reversed()
-                                .thenComparing(Comparator.naturalOrder())
-                )
+                .sorted(Comparator.comparingInt(String::length).reversed().thenComparing(Comparator.naturalOrder()))
                 .toList();
         return new Anchors(encode(group), encode(rootName), modules.isEmpty() ? List.of(encode(rootName)) : modules);
     }

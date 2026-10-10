@@ -285,7 +285,7 @@ class BumpVersionPluginTest {
         // ARRANGE //
         writeFoundationFixture(directory, "1.2.0-SNAPSHOT", "");
         Files.writeString(directory.resolve("NOTES.md"), "version=1.2.0-SNAPSHOT\n");
-        Files.write(directory.resolve("blob.bin"), "\0version=1.2.0-SNAPSHOT\n".getBytes(StandardCharsets.ISO_8859_1));
+        Files.writeString(directory.resolve("blob.bin"), "\0version=1.2.0-SNAPSHOT\n", StandardCharsets.ISO_8859_1);
         track(directory, "NOTES.md");
         Map<String, String> before = read(directory);
 
@@ -416,7 +416,7 @@ class BumpVersionPluginTest {
             DirCache index = git.getRepository().readDirCache();
             for (int i = 0; i < index.getEntryCount(); i++) {
                 String path = index.getEntry(i).getPathString();
-                files.put(path, new String(Files.readAllBytes(directory.resolve(path)), StandardCharsets.ISO_8859_1));
+                files.put(path, Files.readString(directory.resolve(path), StandardCharsets.ISO_8859_1));
             }
         }
         return files;
@@ -431,7 +431,7 @@ class BumpVersionPluginTest {
      */
     private static void restore(Path directory, Map<String, String> files) throws IOException {
         for (Map.Entry<String, String> file : files.entrySet()) {
-            Files.write(directory.resolve(file.getKey()), file.getValue().getBytes(StandardCharsets.ISO_8859_1));
+            Files.writeString(directory.resolve(file.getKey()), file.getValue(), StandardCharsets.ISO_8859_1);
         }
     }
 
@@ -451,9 +451,8 @@ class BumpVersionPluginTest {
      * @param directory the project directory, which becomes the repository
      * @param untracked paths to leave out of the index
      * @throws GitAPIException if a Git operation fails
-     * @throws IOException if the repository cannot be created
      */
-    private static void track(Path directory, String... untracked) throws GitAPIException, IOException {
+    private static void track(Path directory, String... untracked) throws GitAPIException {
         try (Git git = Git.init().setDirectory(directory.toFile()).setInitialBranch("main").call()) {
             git.add().addFilepattern(".").call();
             for (String path : untracked) {

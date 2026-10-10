@@ -161,7 +161,7 @@ class RewriterTest {
      * @throws IOException if the file cannot be read
      */
     private static String readFile(Path file) throws IOException {
-        return new String(Files.readAllBytes(file), StandardCharsets.ISO_8859_1);
+        return Files.readString(file, StandardCharsets.ISO_8859_1);
     }
 
     static Stream<RewriteParameters> rewrite__archivesAndVersionLines() {

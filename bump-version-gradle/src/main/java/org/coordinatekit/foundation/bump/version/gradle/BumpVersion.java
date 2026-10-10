@@ -189,7 +189,7 @@ public abstract class BumpVersion extends DefaultTask {
         List<String> written = new ArrayList<>();
         plan.changedFiles().forEach((path, rewrite) -> {
             try {
-                Files.write(root.resolve(path), rewrite.text().getBytes(StandardCharsets.ISO_8859_1));
+                Files.writeString(root.resolve(path), rewrite.text(), StandardCharsets.ISO_8859_1);
                 written.add(path);
             } catch (IOException e) {
                 throw new GradleException(

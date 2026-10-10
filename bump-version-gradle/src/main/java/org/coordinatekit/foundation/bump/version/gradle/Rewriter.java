@@ -356,10 +356,14 @@ final class Rewriter {
     private static Pattern anchorPattern(Anchors anchors) {
         String group = Pattern.quote(anchors.group());
         return Pattern.compile(
-                LEFT_GUARD + group + ":" + "|" + PLUGIN_ID_ANCHOR_START + "[\"']" + group + PLUGIN_ID_SUBPATH + "[\"']"
-                        + "|[\"']" + group + PLUGIN_ID_SUBPATH + ":[0-9]" + "|" + LEFT_GUARD
-                        + alternation(anchors.modules()) + "-[0-9]" + "|" + LEFT_GUARD
-                        + Pattern.quote(anchors.rootName()) + "-[0-9]"
+                String.join(
+                        "|",
+                        LEFT_GUARD + group + ":",
+                        PLUGIN_ID_ANCHOR_START + "[\"']" + group + PLUGIN_ID_SUBPATH + "[\"']",
+                        "[\"']" + group + PLUGIN_ID_SUBPATH + ":[0-9]",
+                        LEFT_GUARD + alternation(anchors.modules()) + "-[0-9]",
+                        LEFT_GUARD + Pattern.quote(anchors.rootName()) + "-[0-9]"
+                )
         );
     }
 
