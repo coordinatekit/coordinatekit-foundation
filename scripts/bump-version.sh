@@ -68,7 +68,7 @@ ESCAPED_GROUP=$(printf '%s' "$GROUP" | sed 's/\./\\./g')
 ESCAPED_MODULES=$(printf '%s' "$MODULES" | sed 's/\./\\./g' | paste -sd'|' -)
 
 # Two paths of test data are excluded. This script's own test file declares fixture repositories
-# with a version key and asserts expected output coordinates and jar filenames. The bump-version
+# with a version key and asserts expected output coordinates and jar filenames. The version-references
 # plugin's tests pin synthetic versions for the same reason. Those literals are test data, not
 # project versions, and rewriting them silently breaks the suite. The first entry is one exact path,
 # so any other script stays in scope; the second is the plugin module's test sources, a whole
@@ -76,7 +76,7 @@ ESCAPED_MODULES=$(printf '%s' "$MODULES" | sed 's/\./\\./g' | paste -sd'|' -)
 # file's own comments for the same reason.
 EXCLUDED_TEST_DATA=(
   scripts/bump-version.test.sh
-  bump-version-gradle/src/test
+  version-references-gradle/src/test
 )
 
 # Restrict every rewrite step to tracked text files. Binary files (e.g. the tracked

@@ -5,10 +5,11 @@
 //
 // changelog-gradle is registered as a plugin under its id, because the root build applies it from
 // its `plugins` block, and a release pull request regenerates CHANGELOG.md with the template that
-// pull request ships. The two aggregate plugins are applied by class, so their sources are only
-// added to compileJava, through its sources and not a source set, so IntelliJ does not see the same
-// directories as two content roots. They may use only the Gradle API and JSpecify, which is all
-// this build gives them.
+// pull request ships. The two aggregate plugins and version-references-gradle are applied by class,
+// so their sources are only added to compileJava, through its sources and not a source set, so
+// IntelliJ does not see the same directories as two content roots. The aggregate plugins may use
+// only the Gradle API and JSpecify, which is all this build gives them; version-references-gradle
+// is the one that also needs JGit, to list the files Git tracks.
 plugins {
     id "java-gradle-plugin"
 }
@@ -36,9 +37,13 @@ gradlePlugin {
 
 dependencies {
     implementation libs.gitchangelog.gradle.plugin
+    implementation libs.jgit
     compileOnly libs.jspecify
 }
 
 tasks.named("compileJava", JavaCompile) {
-    source(files("../aggregate-jacoco-gradle/src/main/java", "../aggregate-javadoc-gradle/src/main/java"))
+    source(files(
+            "../aggregate-jacoco-gradle/src/main/java",
+            "../aggregate-javadoc-gradle/src/main/java",
+            "../version-references-gradle/src/main/java"))
 }
