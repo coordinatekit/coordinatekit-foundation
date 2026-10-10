@@ -483,8 +483,10 @@ class RewriterTest {
                 System.getProperty("versionReferences.rootName"),
                 Arrays.asList(System.getProperty("versionReferences.modules").split(","))
         );
-        String release = System.getProperty("versionReferences.releaseVersion");
-        String next = (release.equals("9.9.9") ? "9.9.8" : "9.9.9") + "-SNAPSHOT";
+        // A pair the docs can never show, so the rewrite has something to move on every commit, the release
+        // commit included.
+        String release = "9.9.9";
+        String next = "9.9.10-SNAPSHOT";
         ReleaseVersions versions = ReleaseVersions.of(release, next);
 
         // ACT //
