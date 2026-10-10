@@ -554,6 +554,26 @@ EOF
   assert_changed_files README.md gradle.properties scripts/other.sh
 }
 
+case_plugin_test_sources_untouched() {
+  # The bump-version plugin's tests pin synthetic versions as test data, so the script excludes that
+  # module's whole test tree. Its main sources and a sibling module's tests stay in scope.
+  write_file bump-version-gradle/src/test/java/Fixture.java <<'EOF'
+String pinned = "version=0.1.0-SNAPSHOT";
+EOF
+  write_file bump-version-gradle/src/main/java/Main.java <<'EOF'
+String pinned = "version=0.1.0-SNAPSHOT";
+EOF
+  write_file beta/src/test/java/Sibling.java <<'EOF'
+String pinned = "version=0.1.0-SNAPSHOT";
+EOF
+  bump 0.1.0
+  assert_status 0
+  assert_unchanged bump-version-gradle/src/test/java/Fixture.java
+  assert_file_contains bump-version-gradle/src/main/java/Main.java "version=0.1.0"
+  assert_file_contains beta/src/test/java/Sibling.java "version=0.1.0"
+  assert_changed_files README.md gradle.properties bump-version-gradle/src/main/java/Main.java beta/src/test/java/Sibling.java
+}
+
 case_real_repo_docs_track_the_documented_invariants() {
   use_real_repo_docs
   bump 9.9.9
@@ -608,6 +628,7 @@ missing_argument_rejected
 module_name_as_suffix_of_another_word
 coordinate_without_version_untouched
 own_test_file_untouched
+plugin_test_sources_untouched
 real_repo_docs_track_the_documented_invariants
 real_repo_snapshot_bump_leaves_release_docs
 "

@@ -35,6 +35,7 @@ def codeProjects = subprojects.findAll { it.name != "conventions" }
 def pluginProjects = [
         project(":aggregate-jacoco-gradle"),
         project(":aggregate-javadoc-gradle"),
+        project(":bump-version-gradle"),
         project(":changelog-gradle"),
         project(":concordance-gradle"),
         project(":third-party-licenses-gradle")
@@ -154,6 +155,25 @@ configure(project(":concordance-gradle")) {
     }
 }
 
+configure(project(":bump-version-gradle")) {
+    // The tests that rewrite this repository's own README and RELEASE.md need to know what a bump
+    // would be anchored to, and the Gradle model already says: the group every project shares, the
+    // root project's name, the subproject names, and the current version. They arrive as system
+    // properties so that no test source carries a literal that a release bump would then have to
+    // chase. The files are declared as inputs, so editing a doc re-runs the test instead of leaving
+    // it UP-TO-DATE.
+    tasks.named("test", Test) {
+        def root = rootProject
+        inputs.files(root.file("README.md"), root.file("RELEASE.md"), root.file("gradle.properties"))
+                .withPropertyName("repositoryDocs")
+        systemProperty "bumpVersion.repositoryRoot", root.projectDir.absolutePath
+        systemProperty "bumpVersion.group", root.group.toString()
+        systemProperty "bumpVersion.rootName", root.name
+        systemProperty "bumpVersion.modules", root.subprojects*.name.sort().join(",")
+        systemProperty "bumpVersion.currentVersion", root.version.toString()
+    }
+}
+
 // Signing is required only when a deployment is actually going to Central. `./gradlew build`,
 // `publishToMavenLocal`, and snapshot uploads all run without a key. The answer is settled once the
 // task graph is, and held in a property: the configuration cache stores it with the graph, whereas
@@ -177,6 +197,7 @@ nmcpAggregation {
 dependencies {
     nmcpAggregation project(":aggregate-jacoco-gradle")
     nmcpAggregation project(":aggregate-javadoc-gradle")
+    nmcpAggregation project(":bump-version-gradle")
     nmcpAggregation project(":changelog-gradle")
     nmcpAggregation project(":cli-brand")
     nmcpAggregation project(":concordance")

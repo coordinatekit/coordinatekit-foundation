@@ -1,0 +1,21 @@
+description = "Gradle plugin that moves a build's version across every tracked file that names it."
+
+// The one block outside the description-and-dependencies rule the other modules keep to: a plugin
+// id and its implementation class are this module's identity rather than build wiring, and
+// java-gradle-plugin reads them from here to generate the descriptor and the marker publication.
+gradlePlugin {
+    plugins {
+        bumpVersion {
+            id = "org.coordinatekit.foundation.bump-version"
+            implementationClass = "org.coordinatekit.foundation.bump.version.gradle.BumpVersionPlugin"
+            displayName = "Bump version"
+            description = project.description
+        }
+    }
+}
+
+dependencies {
+    implementation libs.jgit
+
+    testImplementation gradleTestKit()
+}
