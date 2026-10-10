@@ -331,7 +331,7 @@ Two invariants keep the examples in a repository's documents self-maintaining. T
 
 ### The check
 
-Before it writes anything, the task looks for a line that names the project and that no rule recognised. A line is reported when it contains a coordinate of the project's group, a plugin id of that group, a module jar filename, or a root archive name, shows a version other than the new one, and is of the kind the bump moves. The build fails listing each `file:line`, and no file is written:
+Before it writes anything, the task looks for a mention of the project that no rule recognised. A line is reported when it contains a coordinate of the project's group, a plugin id of that group (in a `plugins` block or in a version catalog, as a table or as an `"<id>:<version>"` string), a module jar filename, or a root archive name, shows a version other than the new one, and is of the kind the bump moves. A line that a rule did recognise is reported too when a second mention on it keeps a version the rules left alone, as in `com.example.widgets:beta:1.2.3 and com.example.widgets:alpha-core:1.0.0.Final`. The build fails listing each `file:line`, and no file is written:
 
 ```
 These lines name the project with a version that no rule recognises. Nothing was written.

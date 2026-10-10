@@ -290,6 +290,13 @@ class RewriterTest {
                         "com.example.widgets:beta:2.0.0 is the artifact\n"
                 ),
                 new RewriteParameters(
+                        "coordinate of an artifact that is no module",
+                        DEV,
+                        RELEASE,
+                        "com.example.widgets:gizmo:1.2.3\n",
+                        "com.example.widgets:gizmo:2.0.0\n"
+                ),
+                new RewriteParameters(
                         "coordinate with a classifier",
                         DEV,
                         RELEASE,
@@ -787,6 +794,48 @@ class RewriterTest {
                         RELEASE,
                         "alpha = { module = \"com.example.widgets:alpha-core\", version = \"1.2.3\" }\n",
                         List.of(1)
+                ),
+                new UnmatchedParameters(
+                        "second mention on a line a rule rewrites",
+                        DEV,
+                        RELEASE,
+                        "com.example.widgets:beta:1.2.3 and com.example.widgets:alpha-core:1.0.0.Final\n",
+                        List.of(1)
+                ),
+                new UnmatchedParameters(
+                        "plugin id in a version catalog table",
+                        DEV,
+                        RELEASE,
+                        "gizmo = { id = \"com.example.widgets.gizmo\", version = \"1.2.3\" }\n",
+                        List.of(1)
+                ),
+                new UnmatchedParameters(
+                        "plugin id in a version catalog string",
+                        DEV,
+                        RELEASE,
+                        "gizmo = \"com.example.widgets.gizmo:1.2.3\"\n",
+                        List.of(1)
+                ),
+                new UnmatchedParameters(
+                        "unrelated version beside a rewritten mention",
+                        DEV,
+                        RELEASE,
+                        "com.example.widgets:beta:1.2.3 needs Gradle 9.7.1\n",
+                        List.of()
+                ),
+                new UnmatchedParameters(
+                        "release mention beside a snapshot on a snapshot bump",
+                        DEV,
+                        NEXT_DEV,
+                        "com.example.widgets:beta:2.0.0-SNAPSHOT or com.example.widgets:beta:1.2.3\n",
+                        List.of()
+                ),
+                new UnmatchedParameters(
+                        "sources jar a rule rewrites",
+                        DEV,
+                        RELEASE,
+                        "alpha-core-1.2.3-sources.jar\n",
+                        List.of()
                 ),
                 new UnmatchedParameters(
                         "stale snapshot plugin id on a snapshot bump",

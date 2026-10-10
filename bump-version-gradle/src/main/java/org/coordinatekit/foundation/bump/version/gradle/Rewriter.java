@@ -51,7 +51,9 @@ import java.util.stream.Collectors;
  * <p>
  * A line that names the project in an anchored form, carries a version that is not the new one, and
  * is targeted by the bump but matched by no rule is reported in {@link FileRewrite#unmatched}, so a
- * document format the rules do not know fails the bump and does not slip through unchanged.
+ * document format the rules do not know fails the bump and does not slip through unchanged. A line
+ * is also reported when a rule recognised one mention on it but left the version of another mention
+ * as it was.
  *
  * <p>
  * An instance is built for one bump and holds the patterns that depend on it, compiled once, so
@@ -85,6 +87,12 @@ final class Rewriter {
 
     /** The character before a name that rules out a longer name ending in it. */
     private static final String LEFT_GUARD = "(?<![A-Za-z0-9._-])";
+
+    /**
+     * The start of a plugin id as {@link #anchorPattern} spots it, up to the opening quote. Unlike
+     * {@link #PLUGIN_ID_START} it also accepts {@code id = "…"}, the table form of a version catalog.
+     */
+    private static final String PLUGIN_ID_ANCHOR_START = "(?<![A-Za-z0-9_.-])id\\s*[(=]?\\s*";
 
     /** The start of a plugin id in a {@code plugins} block, up to the opening quote. */
     private static final String PLUGIN_ID_START = "(?<![A-Za-z0-9_.-])id\\s*\\(?\\s*";
@@ -341,13 +349,16 @@ final class Rewriter {
      *
      * @param anchors the names the rules are anchored to
      * @return a pattern that finds a project coordinate, plugin id, module jar stem, or root archive
-     *         stem
+     *         stem, where a plugin id is anchored in the {@code plugins} block and in both forms of a
+     *         version catalog, the table {@code { id = "…", version = "…" }} and the string
+     *         {@code "<id>:<version>"}
      */
     private static Pattern anchorPattern(Anchors anchors) {
         String group = Pattern.quote(anchors.group());
         return Pattern.compile(
-                LEFT_GUARD + group + ":" + "|" + PLUGIN_ID_START + "[\"']" + group + PLUGIN_ID_SUBPATH + "[\"']" + "|"
-                        + LEFT_GUARD + alternation(anchors.modules()) + "-[0-9]" + "|" + LEFT_GUARD
+                LEFT_GUARD + group + ":" + "|" + PLUGIN_ID_ANCHOR_START + "[\"']" + group + PLUGIN_ID_SUBPATH + "[\"']"
+                        + "|[\"']" + group + PLUGIN_ID_SUBPATH + ":[0-9]" + "|" + LEFT_GUARD
+                        + alternation(anchors.modules()) + "-[0-9]" + "|" + LEFT_GUARD
                         + Pattern.quote(anchors.rootName()) + "-[0-9]"
         );
     }
@@ -449,6 +460,38 @@ final class Rewriter {
         boolean snapshot = version.text().endsWith(VersionBump.SNAPSHOT);
         return block.groupId().equals(anchors.group()) && anchors.modules().contains(block.artifactId())
                 && isLiteral(version.text()) && snapshot != bump.nextIsRelease();
+    }
+
+    /**
+     * Whether a line that some rule claimed still shows a mention whose version no rule claimed.
+     *
+     * <p>
+     * Each anchor on the line owns the first version-like token from its start to the next anchor's
+     * start, or to the end of the line. The search starts at the anchor itself because a jar or archive
+     * anchor consumes the first digit of its version.
+     *
+     * @param line the line, with its spans claimed
+     * @return {@code true} if an owned token is not the new version, is of the kind this bump targets,
+     *         and overlaps no claimed span
+     */
+    private boolean hidesUnclaimedMention(Line line) {
+        List<Integer> starts = new ArrayList<>();
+        Matcher anchor = anchorPattern.matcher(line.text());
+        while (anchor.find()) {
+            starts.add(anchor.start());
+        }
+        Matcher token = VERSION_TOKEN.matcher(line.text()).useTransparentBounds(true);
+        for (int i = 0; i < starts.size(); i++) {
+            int end = i + 1 < starts.size() ? starts.get(i + 1) : line.text().length();
+            token.region(starts.get(i), end);
+            if (token.find() && !token.group().equals(bump.next()) && targetsVersion(token.group())) {
+                Span owned = new Span(token.start(), token.end(), Form.COORDINATE);
+                if (line.spans().stream().noneMatch(claimed -> overlaps(claimed, owned))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -655,6 +698,10 @@ final class Rewriter {
      * one on a snapshot bump. A project dependency block whose version no rule edited is reported at
      * its {@code <version>} line.
      *
+     * <p>
+     * A line that some rule did claim is also reported when it holds another mention whose version no
+     * rule claimed, so one recognised mention cannot hide an unrecognised one beside it.
+     *
      * @param lines the file's lines, with their spans claimed
      * @param blocks the file's dependency elements
      * @return the 1-based line numbers, ascending
@@ -665,6 +712,9 @@ final class Rewriter {
             String line = lines.get(i).text();
             if (!lines.get(i).matched() && targetsLine(line) && anchorPattern.matcher(line).find()
                     && showsOtherVersion(line)) {
+                flagged.add(i + 1);
+            }
+            if (lines.get(i).matched() && targetsLine(line) && hidesUnclaimedMention(lines.get(i))) {
                 flagged.add(i + 1);
             }
         }
