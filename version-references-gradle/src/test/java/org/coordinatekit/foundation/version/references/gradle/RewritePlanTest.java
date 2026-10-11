@@ -71,19 +71,6 @@ class RewritePlanTest {
     }
 
     @Test
-    void plan__countsTheReleaseVersionInsideASnapshotOfIt() {
-        // ACT //
-        RewritePlan plan = RewritePlan.plan(
-                files("a.txt", "2.0.0-SNAPSHOT 2.0.0\n", "b.txt", "one 2.0.0-SNAPSHOT\n", "c.txt", "none\n"),
-                ANCHORS,
-                VERSIONS
-        );
-
-        // ASSERT //
-        assertEquals(3, plan.occurrences());
-    }
-
-    @Test
     void plan__separatesChangedFilesFromFilesWithUnmatchedLines() {
         // ACT //
         RewritePlan plan = RewritePlan.plan(
@@ -129,6 +116,35 @@ class RewritePlanTest {
     }
 
     @Test
+    void report__saysSoWhenNothingChanged() {
+        // ARRANGE //
+        RewritePlan plan = RewritePlan.plan(files("NOTES.md", "nothing\n"), ANCHORS, VERSIONS);
+
+        // ACT //
+        String report = plan.report(VERSIONS);
+
+        // ASSERT //
+        assertEquals(
+                "Version references already match release 2.0.0 and next 2.1.0-SNAPSHOT. Nothing to rewrite.",
+                report
+        );
+    }
+
+    @Test
+    void requireApplicable__acceptsAPlanWithNothingToChange() {
+        // ARRANGE //
+        RewritePlan plan = RewritePlan.plan(
+                files("README.md", "com.example.widgets:beta:2.0.0\n", "NOTES.md", "Working towards 2.0.0.\n"),
+                ANCHORS,
+                VERSIONS
+        );
+
+        // ACT / ASSERT //
+        assertTrue(plan.changedFiles().isEmpty());
+        assertDoesNotThrow(() -> plan.requireApplicable(VERSIONS));
+    }
+
+    @Test
     void requireApplicable__acceptsASoundPlan() {
         // ARRANGE //
         RewritePlan plan = RewritePlan.plan(
@@ -166,16 +182,6 @@ class RewritePlanTest {
     static Stream<RefusedParameters> requireApplicable__refused() {
         return Stream.of(
                 new RefusedParameters(
-                        "release version in no file",
-                        files("gradle.properties", "version=3.0.0-SNAPSHOT\n"),
-                        "'2.0.0' is not in any tracked file"
-                ),
-                new RefusedParameters(
-                        "release version where no rule reads it",
-                        files("NOTES.md", "Working towards 2.0.0.\n"),
-                        "No files were changed"
-                ),
-                new RefusedParameters(
                         "line that names the project and no rule reads",
                         files(
                                 "gradle.properties",
@@ -184,11 +190,6 @@ class RewritePlanTest {
                                 "ok\ncom.example.widgets:beta:1.0.0.Final\n"
                         ),
                         "README.md:2"
-                ),
-                new RefusedParameters(
-                        "unrecognised line wins over no change",
-                        files("README.md", "com.example.widgets:beta:1.0.0.Final\n", "NOTES.md", "2.0.0\n"),
-                        "README.md:1"
                 )
         );
     }

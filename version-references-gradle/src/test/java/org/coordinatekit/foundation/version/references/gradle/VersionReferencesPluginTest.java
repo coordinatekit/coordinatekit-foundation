@@ -61,6 +61,12 @@ import java.util.Properties;
  * as under an IDE's own test runner, the fixtures run the same and record nothing.
  */
 class VersionReferencesPluginTest {
+    /**
+     * The version the foundation-shaped fixtures declare, and show as a snapshot coordinate in
+     * {@code RELEASE.md}.
+     */
+    private static final String DECLARED = "1.2.0-SNAPSHOT";
+
     /** The group every fixture build declares. */
     private static final String GROUP = "com.example.widgets";
 
@@ -186,19 +192,6 @@ class VersionReferencesPluginTest {
     }
 
     /**
-     * Writes files back as they were.
-     *
-     * @param directory the fixture's project directory
-     * @param files the content to restore, by path, as {@link #read} returns it
-     * @throws IOException if a file cannot be written
-     */
-    private static void restore(Path directory, Map<String, String> files) throws IOException {
-        for (Map.Entry<String, String> file : files.entrySet()) {
-            Files.writeString(directory.resolve(file.getKey()), file.getValue(), StandardCharsets.ISO_8859_1);
-        }
-    }
-
-    /**
      * Builds the arguments that run the task with both versions given as options.
      *
      * @return the task name and its two options
@@ -223,7 +216,7 @@ class VersionReferencesPluginTest {
         // ARRANGE //
         Path project = Files.createDirectory(directory.resolve("project"));
         Path decoy = Files.createDirectory(directory.resolve("decoy"));
-        writeFoundationFixture(project, "1.2.0-SNAPSHOT", "");
+        writeFoundationFixture(project, "");
         Files.writeString(decoy.resolve("decoy.txt"), "com.example.widgets:beta:1.1.0\n");
         try (Git git = Git.init().setDirectory(decoy.toFile()).call()) {
             git.add().addFilepattern("decoy.txt").call();
@@ -246,7 +239,7 @@ class VersionReferencesPluginTest {
     void rewriteVersionReferences__leavesAnExcludedFileAlone(@TempDir Path directory)
             throws GitAPIException, IOException {
         // ARRANGE //
-        writeFoundationFixture(directory, "1.2.0-SNAPSHOT", """
+        writeFoundationFixture(directory, """
 
                 foundationVersionReferences {
                     exclude "docs/**"
@@ -322,7 +315,7 @@ class VersionReferencesPluginTest {
     void rewriteVersionReferences__movesTheFilesForARelease(@TempDir Path directory)
             throws GitAPIException, IOException {
         // ARRANGE //
-        writeFoundationFixture(directory, "1.2.0-SNAPSHOT", "");
+        writeFoundationFixture(directory, "");
         Files.writeString(directory.resolve("NOTES.md"), "com.example.widgets:beta:1.1.0\n");
         Files.writeString(
                 directory.resolve("blob.bin"),
@@ -345,17 +338,42 @@ class VersionReferencesPluginTest {
         assertEquals(before.get("gradle.properties"), Files.readString(directory.resolve("gradle.properties")));
         assertEquals("com.example.widgets:beta:1.1.0\n", Files.readString(directory.resolve("NOTES.md")));
         assertEquals(before.get("blob.bin"), read(directory).get("blob.bin"));
-        // gradle.properties and RELEASE.md name the release version once each. The untracked NOTES.md
-        // and the binary blob.bin are not counted.
-        assertTrue(result.getOutput().contains("Found 2 occurrence(s) of '1.2.0'"), result.getOutput());
         assertTrue(result.getOutput().contains("README.md ("), result.getOutput());
+        assertTrue(result.getOutput().contains("RELEASE.md ("), result.getOutput());
+    }
+
+    @Test
+    void rewriteVersionReferences__optionsOverrideTheReleaseProperties(@TempDir Path directory)
+            throws GitAPIException, IOException {
+        // ARRANGE //
+        writeFoundationFixture(directory, "");
+        track(directory);
+
+        // ACT //
+        runner(directory)
+                .withArguments(
+                        "rewriteVersionReferences",
+                        "-Prelease.releaseVersion=9.9.0",
+                        "-Prelease.newVersion=9.10.0-SNAPSHOT",
+                        "--release=" + RELEASE,
+                        "--next=" + NEXT
+                )
+                .build();
+
+        // ASSERT //
+        String readme = Files.readString(directory.resolve("README.md"));
+        String releaseNotes = Files.readString(directory.resolve("RELEASE.md"));
+        assertTrue(readme.contains("com.example.widgets:beta:" + RELEASE), readme);
+        assertTrue(releaseNotes.contains("com.example.widgets:beta:" + NEXT), releaseNotes);
+        assertFalse(readme.contains("9.9.0"), readme);
+        assertFalse(releaseNotes.contains("9.10.0"), releaseNotes);
     }
 
     @Test
     void rewriteVersionReferences__readsTheReleasePropertiesWhenNoOptionIsGiven(@TempDir Path directory)
             throws GitAPIException, IOException {
         // ARRANGE //
-        writeFoundationFixture(directory, "1.2.0-SNAPSHOT", "");
+        writeFoundationFixture(directory, "");
         track(directory);
 
         // ACT //
@@ -378,7 +396,7 @@ class VersionReferencesPluginTest {
     void rewriteVersionReferences__refusesWithoutAVersionPair(@TempDir Path directory)
             throws GitAPIException, IOException {
         // ARRANGE //
-        writeFoundationFixture(directory, "1.2.0-SNAPSHOT", "");
+        writeFoundationFixture(directory, "");
         track(directory);
         Map<String, String> before = read(directory);
 
@@ -394,9 +412,8 @@ class VersionReferencesPluginTest {
     void rewriteVersionReferences__reusesTheConfigurationCache(@TempDir Path directory)
             throws GitAPIException, IOException {
         // ARRANGE //
-        writeFoundationFixture(directory, "1.2.0-SNAPSHOT", "");
+        writeFoundationFixture(directory, "");
         track(directory);
-        Map<String, String> before = read(directory);
         GradleRunner runner = runner(directory).withArguments(
                 "rewriteVersionReferences",
                 "--release=" + RELEASE,
@@ -404,9 +421,6 @@ class VersionReferencesPluginTest {
                 "--configuration-cache"
         );
         runner.build();
-        // The rewrite changed README.md and RELEASE.md, and a second run over the rewritten files
-        // would find nothing to change, so the bytes go back.
-        restore(directory, before);
 
         // ACT //
         BuildResult result = runner.build();
@@ -417,10 +431,26 @@ class VersionReferencesPluginTest {
     }
 
     @Test
+    void rewriteVersionReferences__succeedsWhenRunTwice(@TempDir Path directory) throws GitAPIException, IOException {
+        // ARRANGE //
+        writeFoundationFixture(directory, "");
+        track(directory);
+        runner(directory).withArguments(rewrite()).build();
+        Map<String, String> afterFirst = read(directory);
+
+        // ACT //
+        BuildResult result = runner(directory).withArguments(rewrite()).build();
+
+        // ASSERT //
+        assertEquals(afterFirst, read(directory));
+        assertTrue(result.getOutput().contains("Nothing to rewrite"), result.getOutput());
+    }
+
+    @Test
     void rewriteVersionReferences__warnsAboutAnExcludeThatMatchesNothing(@TempDir Path directory)
             throws GitAPIException, IOException {
         // ARRANGE //
-        writeFoundationFixture(directory, "1.2.0-SNAPSHOT", """
+        writeFoundationFixture(directory, """
 
                 foundationVersionReferences {
                     exclude "./docs/**", "README.md"
@@ -445,7 +475,7 @@ class VersionReferencesPluginTest {
     void rewriteVersionReferences__writesNothingWhenALineIsNotRecognised(@TempDir Path directory)
             throws GitAPIException, IOException {
         // ARRANGE //
-        writeFoundationFixture(directory, "1.2.0-SNAPSHOT", "");
+        writeFoundationFixture(directory, "");
         Files.writeString(
                 directory.resolve("README.md"),
                 "com.example.widgets:beta:1.1.0\ncom.example.widgets:beta:1.0.0.Final\n"
@@ -537,12 +567,11 @@ class VersionReferencesPluginTest {
      * coordinate in {@code RELEASE.md}.
      *
      * @param directory the project directory
-     * @param version the version the build declares
      * @param block Gradle script appended to the build
      * @throws IOException if the fixture cannot be written
      */
-    private static void writeFoundationFixture(Path directory, String version, String block) throws IOException {
-        writeFixture(directory, version, block, "alpha-core", "beta");
+    private static void writeFoundationFixture(Path directory, String block) throws IOException {
+        writeFixture(directory, DECLARED, block, "alpha-core", "beta");
         Files.writeString(directory.resolve("README.md"), """
                 Release coordinates:
 
@@ -557,6 +586,6 @@ class VersionReferencesPluginTest {
                 Consuming snapshots:
 
                     com.example.widgets:beta:%s
-                """.formatted(version.endsWith("-SNAPSHOT") ? version : version + "-SNAPSHOT"));
+                """.formatted(DECLARED));
     }
 }

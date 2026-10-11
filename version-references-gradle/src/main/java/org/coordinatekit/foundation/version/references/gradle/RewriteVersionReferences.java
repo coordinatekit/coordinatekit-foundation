@@ -167,9 +167,10 @@ public abstract class RewriteVersionReferences extends DefaultTask {
         }
 
         RewritePlan plan = RewritePlan.plan(read(root, tracked, getExcludes().get()), anchors, versions);
-        getLogger().lifecycle("Found {} occurrence(s) of '{}' to evaluate", plan.occurrences(), versions.release());
         plan.requireApplicable(versions);
-        write(root, plan);
+        if (!plan.changedFiles().isEmpty()) {
+            write(root, plan);
+        }
         getLogger().lifecycle(plan.report(versions));
     }
 
