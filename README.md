@@ -2,7 +2,7 @@
 
 The base layer CoordinateKit's projects build on. Functionality more than one repository needs is implemented here once and consumed as a published library.
 
-It includes `cli-brand`, the brand banner CoordinateKit's command-line tools print; `changelog-gradle`, the Gradle plugin that generates `CHANGELOG.md` from conventional commits; `conventions`, the Eclipse formatter profile and license header CoordinateKit's Java sources are formatted against; Concordance, the member-order rule those sources follow, which takes three modules of its own; two Gradle plugins that aggregate a multi-module build's Javadoc and JaCoCo coverage; `third-party-licenses-gradle`, the plugin that checks a build's dependency licenses and renders its third-party attribution file; and `version-references-gradle`, the plugin that rewrites the version references in a build's documents and build files when it releases. Every jar comes straight from Maven Central; see [RELEASE.md](RELEASE.md) for how a release ships and how to depend on a `-SNAPSHOT` build instead.
+It includes `cli-brand`, the brand banner CoordinateKit's command-line tools print; `changelog-gradle`, the Gradle plugin that generates `CHANGELOG.md` from conventional commits; `conventions`, the Eclipse formatter profile and license header CoordinateKit's Java sources are formatted against; Concordance, the member-order rule those sources follow, which takes three modules of its own; `aggregate-javadoc-gradle`, the Gradle plugin that aggregates a multi-module build's Javadoc; `third-party-licenses-gradle`, the plugin that checks a build's dependency licenses and renders its third-party attribution file; and `version-references-gradle`, the plugin that rewrites the version references in a build's documents and build files when it releases. Every jar comes straight from Maven Central; see [RELEASE.md](RELEASE.md) for how a release ships and how to depend on a `-SNAPSHOT` build instead.
 
 ## CLI brand
 
@@ -106,16 +106,11 @@ Both lists are empty by default and matched by fully qualified name against reso
 
 Two annotations grant the exemptions a build cannot express as configuration, and both require a reason. `@IntentionalOrder(members = {...}, reason = "...")` on a type frees whole categories of its members, for a type whose declaration order carries meaning the alphabet would destroy, such as a width ladder running richest to leanest. `@IgnoreOrder(reason = "...")` on a single member takes it out of the check entirely.
 
-## Aggregate Javadoc and JaCoCo
+## Aggregate Javadoc
 
-A multi-module build publishes one set of Javadoc pages and one coverage report, not one per module. Two Gradle plugins register the root project's `aggregateJavadoc` and `aggregateJacocoReport` tasks, so a repository takes the wiring as a plugin instead of copying it into its own build script.
+A multi-module build publishes one set of Javadoc pages, not one per module. The `org.coordinatekit.foundation:aggregate-javadoc-gradle` module publishes a Gradle plugin, under the id `org.coordinatekit.foundation.aggregate-javadoc`, that registers the root project's `aggregateJavadoc` task, so a repository takes the wiring as a plugin instead of copying it into its own build script.
 
-| Module                                                  | What it holds                                                                     |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `org.coordinatekit.foundation:aggregate-javadoc-gradle` | The plugin applied under the id `org.coordinatekit.foundation.aggregate-javadoc`. |
-| `org.coordinatekit.foundation:aggregate-jacoco-gradle`  | The plugin applied under the id `org.coordinatekit.foundation.aggregate-jacoco`.  |
-
-Both plugins publish to Maven Central rather than to the Gradle Plugin Portal, so `settings.gradle` has to name Central among its plugin repositories. For `-SNAPSHOT` versions, see [RELEASE.md](RELEASE.md#consuming-snapshots):
+The plugin publishes to Maven Central rather than to the Gradle Plugin Portal, so `settings.gradle` has to name Central among its plugin repositories. For `-SNAPSHOT` versions, see [RELEASE.md](RELEASE.md#consuming-snapshots):
 
 ```groovy
 pluginManagement {
@@ -126,16 +121,11 @@ pluginManagement {
 }
 ```
 
-The root project applies whichever plugins it wants and configures them in a block each:
+The root project applies the plugin and configures it in an `aggregateJavadoc` block:
 
 ```groovy
 plugins {
     id "org.coordinatekit.foundation.aggregate-javadoc" version "0.3.0"
-    id "org.coordinatekit.foundation.aggregate-jacoco" version "0.3.0"
-}
-
-repositories {
-    mavenCentral()
 }
 
 aggregateJavadoc {
@@ -143,13 +133,9 @@ aggregateJavadoc {
     links = ["https://docs.oracle.com/en/java/javase/21/docs/api/"]
     wordForms = ["cli": "CLI"]
 }
-
-aggregateJacoco {
-    projects = subprojects.findAll { it.name != "docs" }
-}
 ```
 
-Each block has a `projects` property naming the modules the task covers. It defaults to every subproject that applies `java` for Javadoc and every subproject that applies `jacoco` for the coverage report, so the block is only needed to narrow or widen that. `aggregateJavadoc.title` is the one required property, and a build that leaves it out fails at the end of evaluation with a message naming it. `links` and `wordForms` are empty by default.
+The block's `projects` property names the modules the task covers. It defaults to every subproject that applies `java`, so a build sets it only to narrow or widen that, as in `projects = subprojects.findAll { it.name != "docs" }`. The `title` property is the one required setting, and a build that leaves it out fails at the end of evaluation with a message naming it. `links` and `wordForms` are empty by default.
 
 `aggregateJavadoc` writes to `build/docs/aggregateJavadoc` and fails on any Javadoc warning. Each module gets a tab of its own, so its package has to be the module's own group plus its name with the dashes turned into dots: `cli-brand` in group `org.example` lives in `org.example.cli.brand`. Javadoc puts a package in the first group whose pattern matches it, so the plugin registers the longest module name first. Without that, the pattern for `concordance` would also claim the packages of `concordance-gradle`. A tab is titled by the module name's segments, each capitalised, and `wordForms` overrides the ones that should not be, such as `cli` for `CLI`.
 
@@ -162,8 +148,6 @@ tasks.named("aggregateJavadoc", Javadoc) {
 ```
 
 The settings that depend on the selection are read once every project has been evaluated, so realizing the task early, as `allprojects { tasks.withType(Javadoc) { } }` does, is safe. The title, the links, and the groups come only from the `aggregateJavadoc` block, and a `tasks.named` action that sets the title is overwritten. The Javadoc tool comes from the root project's toolchain, so a build that sets a toolchain only in `subprojects { }` will run the task with the daemon's JDK.
-
-`aggregateJacocoReport` writes XML and HTML to `build/reports/jacoco/aggregateJacocoReport`. It runs each selected module's `test` task and reads the execution data that module's own `jacocoTestReport` reads, so any extra data file a build adds there reaches the aggregate too. A selected module without a `jacocoTestReport` task fails the build with a message naming it and `aggregateJacoco.projects`. JaCoCo's Ant tasks resolve against the root project's own repositories, which is why the example declares `mavenCentral()` there.
 
 ## Conventions
 
