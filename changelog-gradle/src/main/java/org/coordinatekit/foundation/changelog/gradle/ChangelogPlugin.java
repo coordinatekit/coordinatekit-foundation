@@ -31,6 +31,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.regex.Pattern;
 
 /**
  * Applies the git-changelog Gradle plugin and configures its {@code gitChangelog} task with
@@ -65,6 +66,12 @@ public class ChangelogPlugin implements Plugin<Project> {
     /** The id of the plugin this one applies. */
     private static final String GIT_CHANGELOG_PLUGIN_ID = "se.bjurr.gitchangelog.git-changelog-gradle-plugin";
 
+    /**
+     * The only form of {@code releaseVersion} git-changelog renders as a release: it keeps just the
+     * digits and dots of a tag name and requires exactly three numbers.
+     */
+    private static final Pattern RELEASE_VERSION = Pattern.compile("\\d+\\.\\d+\\.\\d+");
+
     /** The name of the Gradle property that supplies the repository URL. */
     private static final String REPO_URL_PROPERTY = "repoUrl";
 
@@ -94,7 +101,13 @@ public class ChangelogPlugin implements Plugin<Project> {
             task.untaggedName.convention(extension.getReleaseVersion().map(version -> TAG_PREFIX + version));
             task.handlebarsHelpers
                     .addAll(ChangelogHelpers.helpers(extension.getRepoUrl(), extension.getInitialRelease()));
-            guard(task, extension.getRepoUrl(), extension.getInitialRelease(), project.file(CHANGELOG_FILE));
+            guard(
+                    task,
+                    extension.getRepoUrl(),
+                    extension.getInitialRelease(),
+                    extension.getReleaseVersion(),
+                    project.file(CHANGELOG_FILE)
+            );
         });
     }
 
@@ -105,12 +118,15 @@ public class ChangelogPlugin implements Plugin<Project> {
      * @param task the {@code gitChangelog} task
      * @param repoUrl the repository URL, checked before the task runs
      * @param initialRelease the initial release file, checked before the task runs
+     * @param releaseVersion the version the untagged commits are released as, checked before the task
+     *        runs
      * @param changelog the {@code CHANGELOG.md} the staged file replaces
      */
     private static void guard(
             GitChangelogTask task,
             Provider<String> repoUrl,
             Provider<RegularFile> initialRelease,
+            Provider<String> releaseVersion,
             File changelog
     ) {
         // A plain File rather than the task's property, so the actions capture nothing the
@@ -119,7 +135,12 @@ public class ChangelogPlugin implements Plugin<Project> {
         task.file.set(staged);
         task.doFirst(first -> {
             RegularFile initial = initialRelease.getOrNull();
-            prepare(repoUrl.getOrNull(), initial == null ? null : initial.getAsFile().toPath(), staged.toPath());
+            prepare(
+                    repoUrl.getOrNull(),
+                    initial == null ? null : initial.getAsFile().toPath(),
+                    releaseVersion.getOrNull(),
+                    staged.toPath()
+            );
         });
         task.doLast(last -> publish(staged.toPath(), changelog.toPath()));
     }
@@ -132,11 +153,19 @@ public class ChangelogPlugin implements Plugin<Project> {
      * @param repoUrl the repository URL, or {@code null} when none is configured
      * @param initialRelease the file appended after the last release, or {@code null} when none is
      *        configured
+     * @param releaseVersion the version the untagged commits are released as, or {@code null} when none
+     *        is configured
      * @param staged where the task writes the changelog
      * @throws GradleException if {@code repoUrl} is missing or blank, {@code initialRelease} is set but
-     *         does not exist, or the staging file cannot be cleared
+     *         does not exist, {@code releaseVersion} is set but is not three dot-separated numbers, or
+     *         the staging file cannot be cleared
      */
-    static void prepare(@Nullable String repoUrl, @Nullable Path initialRelease, Path staged) {
+    static void prepare(
+            @Nullable String repoUrl,
+            @Nullable Path initialRelease,
+            @Nullable String releaseVersion,
+            Path staged
+    ) {
         if (repoUrl == null || repoUrl.isBlank()) {
             throw new GradleException(
                     "foundationChangelog needs a repository URL for its links. Add repoUrl=https://github.com/<owner>/<repo>"
@@ -147,6 +176,12 @@ public class ChangelogPlugin implements Plugin<Project> {
             throw new GradleException(
                     "foundationChangelog.initialRelease points at " + initialRelease
                             + ", which does not exist. Create the file or remove the setting."
+            );
+        }
+        if (releaseVersion != null && !RELEASE_VERSION.matcher(releaseVersion).matches()) {
+            throw new GradleException(
+                    "foundationChangelog.releaseVersion must be a version such as 0.4.0, but was '" + releaseVersion
+                            + "'." + (releaseVersion.startsWith("v") ? " Drop the leading v; the plugin adds it." : "")
             );
         }
         try {

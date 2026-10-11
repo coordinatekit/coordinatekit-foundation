@@ -76,6 +76,15 @@ class ChangelogPluginTest {
     private record BlankRepoUrlParameters(String name, String repoUrl) {}
 
     /**
+     * One release version that the guard has to reject.
+     *
+     * @param name what the case shows
+     * @param releaseVersion the configured value
+     * @param hintsAtPrefix whether the message should tell the user to drop a leading {@code v}
+     */
+    private record ReleaseVersionParameters(String name, String releaseVersion, boolean hintsAtPrefix) {}
+
+    /**
      * Matches a rendered commit link, such as {@code ([1a2b3c4](https://…/commit/<40 hex digits>))}.
      */
     private static final Pattern COMMIT_LINK = Pattern.compile("\\(\\[[0-9a-f]+\\]\\([^)]*/commit/[0-9a-f]{40}\\)\\)");
@@ -97,6 +106,27 @@ class ChangelogPluginTest {
         // ASSERT //
         assertTrue(project.getPlugins().hasPlugin("se.bjurr.gitchangelog.git-changelog-gradle-plugin"));
         assertFalse(project.getExtensions().getByType(ChangelogExtension.class).getRepoUrl().isPresent());
+    }
+
+    @Test
+    void apply__failsOnMalformedReleaseVersion(@TempDir Path directory) throws GitAPIException, IOException {
+        // ARRANGE //
+        writeFixture(directory, REPO_URL, """
+
+                foundationChangelog {
+                    releaseVersion = "v0.3.0"
+                }
+                """);
+        writeHistory(directory);
+        Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "previous");
+
+        // ACT //
+        BuildResult result = runner(directory).withArguments("gitChangelog").buildAndFail();
+
+        // ASSERT //
+        assertTrue(result.getOutput().contains("foundationChangelog.releaseVersion must be"), result.getOutput());
+        assertTrue(result.getOutput().contains("Drop the leading v"), result.getOutput());
+        assertEquals("previous", Files.readString(changelog), "the changelog is untouched");
     }
 
     @Test
@@ -452,7 +482,7 @@ class ChangelogPluginTest {
         // ACT //
         GradleException thrown = assertThrows(
                 GradleException.class,
-                () -> ChangelogPlugin.prepare(parameters.repoUrl(), null, staged)
+                () -> ChangelogPlugin.prepare(parameters.repoUrl(), null, null, staged)
         );
 
         // ASSERT //
@@ -466,7 +496,7 @@ class ChangelogPluginTest {
         Path staged = directory.resolve("tmp/gitChangelog/CHANGELOG.md");
 
         // ACT //
-        ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, staged);
+        ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, null, staged);
 
         // ASSERT //
         assertTrue(Files.isDirectory(staged.getParent()));
@@ -479,7 +509,7 @@ class ChangelogPluginTest {
         Path staged = Files.writeString(directory.resolve("CHANGELOG.md"), "stale");
 
         // ACT //
-        ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, staged);
+        ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, null, staged);
 
         // ASSERT //
         assertFalse(Files.exists(staged));
@@ -494,11 +524,58 @@ class ChangelogPluginTest {
         // ACT //
         GradleException thrown = assertThrows(
                 GradleException.class,
-                () -> ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", initialRelease, staged)
+                () -> ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", initialRelease, null, staged)
         );
 
         // ASSERT //
         assertTrue(thrown.getMessage().contains(initialRelease.toString()), thrown.getMessage());
+        assertEquals("kept", Files.readString(staged), "a rejected run leaves the file alone");
+    }
+
+    @Test
+    void prepare__releaseVersionAccepted(@TempDir Path directory) {
+        // ARRANGE //
+        Path staged = directory.resolve("CHANGELOG.md");
+
+        // ACT //
+        ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, "10.20.30", staged);
+
+        // ASSERT //
+        assertFalse(Files.exists(staged));
+    }
+
+    static Stream<ReleaseVersionParameters> prepare__releaseVersionRejected() {
+        return Stream.of(
+                new ReleaseVersionParameters("empty", "", false),
+                new ReleaseVersionParameters("whitespace", "  ", false),
+                new ReleaseVersionParameters("leading v", "v0.3.0", true),
+                new ReleaseVersionParameters("two parts", "1.0", false),
+                new ReleaseVersionParameters("prerelease", "0.3.0-rc.1", false),
+                new ReleaseVersionParameters("snapshot", "0.3.0-SNAPSHOT", false)
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource
+    void prepare__releaseVersionRejected(ReleaseVersionParameters parameters, @TempDir Path directory)
+            throws IOException {
+        // ARRANGE //
+        Path staged = Files.writeString(directory.resolve("CHANGELOG.md"), "kept");
+
+        // ACT //
+        GradleException thrown = assertThrows(
+                GradleException.class,
+                () -> ChangelogPlugin
+                        .prepare("https://github.com/coordinatekit/crf", null, parameters.releaseVersion(), staged)
+        );
+
+        // ASSERT //
+        assertTrue(thrown.getMessage().contains("foundationChangelog.releaseVersion"), thrown.getMessage());
+        assertEquals(
+                parameters.hintsAtPrefix(),
+                thrown.getMessage().contains("Drop the leading v"),
+                thrown.getMessage()
+        );
         assertEquals("kept", Files.readString(staged), "a rejected run leaves the file alone");
     }
 

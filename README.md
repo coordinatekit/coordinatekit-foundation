@@ -58,7 +58,7 @@ foundationChangelog {
 }
 ```
 
-A release can write its changelog before its tag exists. With `releaseVersion` set, the commits above the last tag render as that release, under the heading, date, and link a tag on `HEAD` would give them, and a changelog regenerated once the tag is pushed comes out the same. Unset, which is the default, those commits stay out of the file. A build released through gradle-release reads it from the property that plugin passes into its nested builds:
+A release can write its changelog before its tag exists. With `releaseVersion` set, the commits above the last tag render as that release, under the heading, date, and link a tag on `HEAD` would give them. The value is three dot-separated numbers such as `0.4.0`, without the `v` the plugin adds, and anything else fails the build before the task runs. The release is dated from the newest commit it holds, so a changelog regenerated once the tag is pushed comes out the same only while the tagged commit has that date and adds no commit of its own that the template renders. A release pull request merged the next day, for example, dates the regenerated heading a day later. Unset, which is the default, those commits stay out of the file. A build released through gradle-release reads it from the property that plugin passes into its nested builds:
 
 ```groovy
 foundationChangelog {
