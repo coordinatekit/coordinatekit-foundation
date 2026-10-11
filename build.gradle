@@ -1,6 +1,5 @@
 import net.ltgt.gradle.errorprone.CheckSeverity
 import groovy.xml.XmlSlurper
-import org.coordinatekit.foundation.aggregate.jacoco.gradle.AggregateJacocoPlugin
 import org.coordinatekit.foundation.aggregate.javadoc.gradle.AggregateJavadocPlugin
 import org.coordinatekit.foundation.version.references.gradle.VersionReferencesPlugin
 
@@ -8,6 +7,7 @@ plugins {
     alias(libs.plugins.spotless)
     alias(libs.plugins.errorprone)
     id "jacoco"
+    id "jacoco-report-aggregation"
     id "java-library"
     alias(libs.plugins.nmcp.aggregation)
     id "org.coordinatekit.foundation.changelog"
@@ -16,8 +16,8 @@ plugins {
 allprojects {
     group = "org.coordinatekit.foundation"
 
-    // The root project needs these too: `aggregateJacocoReport` resolves JaCoCo's Ant tasks against
-    // them.
+    // The root project needs these too: `aggregateJacocoReport` resolves JaCoCo's Ant tasks and every
+    // aggregated module's dependencies against them.
     repositories {
         mavenCentral()
     }
@@ -34,7 +34,6 @@ def codeProjects = subprojects.findAll { it.name != "conventions" }
 // must not also get the `centralPortal` publication every other module gets, or the same jar would
 // ship twice under one coordinate.
 def pluginProjects = [
-        project(":aggregate-jacoco-gradle"),
         project(":aggregate-javadoc-gradle"),
         project(":changelog-gradle"),
         project(":concordance-gradle"),
@@ -49,8 +48,8 @@ def pluginProjects = [
 // allprojects so that nothing else resolves through its own mirror of Central. They differ in what a
 // consumer sees: concordance-gradle's dependency is compileOnly, so it stays out of the published
 // POM, while the other two are implementation, so they appear there and a consumer's build resolves
-// them from the portal too. The aggregate plugins need only the Gradle API and JSpecify, so they
-// stay off it.
+// them from the portal too. The aggregate Javadoc plugin needs only the Gradle API and JSpecify, so
+// it stays off it.
 configure([project(":changelog-gradle"), project(":concordance-gradle"), project(":third-party-licenses-gradle")]) {
     repositories {
         gradlePluginPortal()
@@ -128,6 +127,16 @@ configure(pluginProjects) {
         executionData.from(fixtureExecutionData)
     }
 
+    // The root's aggregateJacocoReport does not read this module's reports. It resolves the coverage
+    // variant the jacoco plugin publishes for the `test` suite, which carries only test.exec, so the
+    // fixture data joins that variant too. Matched by name because jacoco is applied further down.
+    configurations.matching { it.name == "coverageDataElementsForTest" }.configureEach {
+        outgoing.artifact(fixtureExecutionData) {
+            type = "binary"
+            builtBy tasks.named("test")
+        }
+    }
+
     // TestKit's withPluginClasspath() defaults to the plugin's class directories, and a directory
     // carries no jar manifest. Some plugins read their own version out of one, so the functional
     // test gets the instrumented jar instead, whose manifest is the published jar's, and exercises
@@ -194,7 +203,6 @@ nmcpAggregation {
 }
 
 dependencies {
-    nmcpAggregation project(":aggregate-jacoco-gradle")
     nmcpAggregation project(":aggregate-javadoc-gradle")
     nmcpAggregation project(":changelog-gradle")
     nmcpAggregation project(":cli-brand")
@@ -469,12 +477,27 @@ project(":concordance-errorprone") {
     }
 }
 
-apply plugin: AggregateJacocoPlugin
 apply plugin: AggregateJavadocPlugin
 apply plugin: VersionReferencesPlugin
 
-aggregateJacoco {
-    projects = codeProjects
+// One coverage report over every module's `test` suite. Each module is a jacocoAggregation
+// dependency rather than a reach into its tasks, and the report keeps the name CI reads its XML by.
+// The dependencies are not transitive: every module is listed anyway, and resolving theirs would
+// need the Gradle Plugin Portal, which the root project stays off.
+dependencies {
+    codeProjects.each {
+        jacocoAggregation(project(it.path)) {
+            transitive = false
+        }
+    }
+}
+
+reporting {
+    reports {
+        aggregateJacocoReport(JacocoCoverageReport) {
+            testSuiteName = "test"
+        }
+    }
 }
 
 aggregateJavadoc {
@@ -482,7 +505,7 @@ aggregateJavadoc {
     title = "CoordinateKit Foundation"
     links = ["https://docs.oracle.com/en/java/javase/21/docs/api/", "https://jspecify.dev/docs/api/"]
     // Name segments whose display form is not just the segment capitalised.
-    wordForms = ["api": "API", "cli": "CLI", "errorprone": "Error Prone", "jacoco": "JaCoCo"]
+    wordForms = ["api": "API", "cli": "CLI", "errorprone": "Error Prone"]
 }
 
 // The plugin's own test fixtures carry version literals that are test data, not references to this

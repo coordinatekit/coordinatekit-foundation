@@ -1,6 +1,5 @@
 rootProject.name = "coordinatekit-foundation"
 
-include "aggregate-jacoco-gradle"
 include "aggregate-javadoc-gradle"
 include "changelog-gradle"
 include "cli-brand"

@@ -1,7 +1,3 @@
-- name: "area: aggregate-jacoco"
-  color: c5def5
-  description: Root aggregateJacocoReport task plugin
-
 - name: "area: aggregate-javadoc"
   color: c5def5
   description: Root aggregateJavadoc task plugin
