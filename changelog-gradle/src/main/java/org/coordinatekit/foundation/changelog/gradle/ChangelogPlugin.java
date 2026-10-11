@@ -68,6 +68,9 @@ public class ChangelogPlugin implements Plugin<Project> {
     /** The name of the Gradle property that supplies the repository URL. */
     private static final String REPO_URL_PROPERTY = "repoUrl";
 
+    /** The prefix before a release's version in its tag, which the template's headings drop. */
+    private static final String TAG_PREFIX = "v";
+
     /** The name of the task git-changelog registers. */
     private static final String TASK_NAME = "gitChangelog";
 
@@ -88,6 +91,7 @@ public class ChangelogPlugin implements Plugin<Project> {
             task.templateContent.convention(template);
             task.dateFormat.convention(DATE_FORMAT);
             task.fromRevision.convention(extension.getFromRevision());
+            task.untaggedName.convention(extension.getReleaseVersion().map(version -> TAG_PREFIX + version));
             task.handlebarsHelpers
                     .addAll(ChangelogHelpers.helpers(extension.getRepoUrl(), extension.getInitialRelease()));
             guard(task, extension.getRepoUrl(), extension.getInitialRelease(), project.file(CHANGELOG_FILE));

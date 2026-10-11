@@ -147,6 +147,24 @@ class ChangelogPluginTest {
     }
 
     @Test
+    void apply__flowsReleaseVersionToUntaggedName() {
+        // ARRANGE //
+        Project project = ProjectBuilder.builder().build();
+        project.getPluginManager().apply(PLUGIN_ID);
+        ChangelogExtension extension = project.getExtensions().getByType(ChangelogExtension.class);
+
+        GitChangelogTask task = gitChangelog(project);
+        boolean unsetBefore = !task.untaggedName.isPresent();
+
+        // ACT //
+        extension.getReleaseVersion().set("0.3.0");
+
+        // ASSERT //
+        assertTrue(unsetBefore);
+        assertEquals("v0.3.0", task.untaggedName.get());
+    }
+
+    @Test
     void apply__leavesThePreviousFileWhenNothingIsWritten(@TempDir Path directory) throws IOException {
         // ARRANGE //
         // No history, so git-changelog finds no repository, logs the error, and finishes green.
@@ -225,6 +243,50 @@ class ChangelogPluginTest {
         assertFalse(changelog.contains("start the repository"), "chore commits have no section");
         assertTrue(latest.contains("[0.2.0]: " + REPO_URL + "/releases/tag/v0.2.0"), changelog);
         assertFalse(changelog.contains("(#12)"), "the pull request reference moves out of the description");
+    }
+
+    @Test
+    void apply__rendersUnreleasedCommitsUnderReleaseVersion(@TempDir Path directory)
+            throws GitAPIException, IOException {
+        // ARRANGE //
+        writeFixture(directory, REPO_URL, """
+
+                foundationChangelog {
+                    releaseVersion = providers.gradleProperty("release.releaseVersion")
+                }
+                """);
+        writeHistory(directory);
+        Path file = directory.resolve("CHANGELOG.md");
+
+        try (Git git = Git.open(directory.toFile())) {
+            commit(git, "feat: add the sprocket", 7);
+
+            // ACT //
+            runner(directory).withArguments("gitChangelog").build();
+            String unset = Files.readString(file);
+
+            runner(directory).withArguments("gitChangelog", "-Prelease.releaseVersion=0.3.0").build();
+            String released = Files.readString(file);
+            List<String> tagsBefore = tagNames(git);
+
+            tag(git, "v0.3.0", 7);
+            runner(directory).withArguments("gitChangelog", "-Prelease.releaseVersion=0.3.0").build();
+            String tagged = Files.readString(file);
+
+            // ASSERT //
+            assertFalse(unset.contains("sprocket"), "an unset releaseVersion leaves the commit out:\n" + unset);
+
+            String hashless = released.replaceAll("\\(\\[[0-9a-f]+\\]\\([^)]*/commit/[0-9a-f]{40}\\)\\)", "(HASH)");
+            String release = releaseBody(hashless, "0.3.0");
+            assertTrue(release.startsWith("## [0.3.0] - 2026-01-07\n"), released);
+            assertTrue(sectionBody(release, "Features").contains("- add the sprocket (HASH)\n"), released);
+            assertTrue(release.contains("[0.3.0]: " + REPO_URL + "/releases/tag/v0.3.0"), released);
+            assertTrue(released.indexOf("## [0.3.0]") < released.indexOf("## [0.2.0]"), released);
+            assertFalse(releaseBody(hashless, "0.2.0").contains("sprocket"), released);
+            assertEquals(List.of("v0.1.0", "v0.2.0"), tagsBefore, "the release writes no tag of its own");
+
+            assertEquals(released, tagged, "tagging HEAD changes nothing about the release");
+        }
     }
 
     @Test
@@ -513,6 +575,22 @@ class ChangelogPluginTest {
      */
     private static void tag(Git git, String name, int day) throws GitAPIException {
         git.tag().setName(name).setMessage(name).setTagger(person(day)).setAnnotated(true).setSigned(false).call();
+    }
+
+    /**
+     * Returns the short names of the repository's tags, sorted.
+     *
+     * @param git the repository to read
+     * @return the tag names, such as {@code v0.1.0}
+     * @throws GitAPIException if the tags cannot be listed
+     */
+    private static List<String> tagNames(Git git) throws GitAPIException {
+        return git.tagList()
+                .call()
+                .stream()
+                .map(ref -> ref.getName().substring("refs/tags/".length()))
+                .sorted()
+                .toList();
     }
 
     @Test
