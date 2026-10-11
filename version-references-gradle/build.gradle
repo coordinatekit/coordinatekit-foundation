@@ -1,0 +1,21 @@
+description = "Gradle plugin that rewrites the version references in a build's documents and build files."
+
+// The one block outside the description-and-dependencies rule the other modules keep to: a plugin
+// id and its implementation class are this module's identity rather than build wiring, and
+// java-gradle-plugin reads them from here to generate the descriptor and the marker publication.
+gradlePlugin {
+    plugins {
+        versionReferences {
+            id = "org.coordinatekit.foundation.version-references"
+            implementationClass = "org.coordinatekit.foundation.version.references.gradle.VersionReferencesPlugin"
+            displayName = "Version references"
+            description = project.description
+        }
+    }
+}
+
+dependencies {
+    implementation libs.jgit
+
+    testImplementation gradleTestKit()
+}

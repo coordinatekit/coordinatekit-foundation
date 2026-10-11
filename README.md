@@ -2,7 +2,7 @@
 
 The base layer CoordinateKit's projects build on. Functionality more than one repository needs is implemented here once and consumed as a published library.
 
-It includes `cli-brand`, the brand banner CoordinateKit's command-line tools print; `changelog-gradle`, the Gradle plugin that generates `CHANGELOG.md` from conventional commits; `conventions`, the Eclipse formatter profile and license header CoordinateKit's Java sources are formatted against; Concordance, the member-order rule those sources follow, which takes three modules of its own; two Gradle plugins that aggregate a multi-module build's Javadoc and JaCoCo coverage; `third-party-licenses-gradle`, the plugin that checks a build's dependency licenses and renders its third-party attribution file; and `bump-version-gradle`, the plugin that moves a build's version across every tracked file that names it. Every jar comes straight from Maven Central; see [RELEASE.md](RELEASE.md) for how a release ships and how to depend on a `-SNAPSHOT` build instead.
+It includes `cli-brand`, the brand banner CoordinateKit's command-line tools print; `changelog-gradle`, the Gradle plugin that generates `CHANGELOG.md` from conventional commits; `conventions`, the Eclipse formatter profile and license header CoordinateKit's Java sources are formatted against; Concordance, the member-order rule those sources follow, which takes three modules of its own; two Gradle plugins that aggregate a multi-module build's Javadoc and JaCoCo coverage; `third-party-licenses-gradle`, the plugin that checks a build's dependency licenses and renders its third-party attribution file; and `version-references-gradle`, the plugin that rewrites the version references in a build's documents and build files when it releases. Every jar comes straight from Maven Central; see [RELEASE.md](RELEASE.md) for how a release ships and how to depend on a `-SNAPSHOT` build instead.
 
 ## CLI brand
 
@@ -270,9 +270,9 @@ Two files sit beside the build script by default, and both locations can be chan
 
 The preamble of the rendered file says each dependency ships as a separate jar under `lib/`, and the source-availability sentence relies on that. It suits a distribution that lays its jars out under `lib/`, as `application` does, and does not suit a fat jar.
 
-## Bump version
+## Version references
 
-`org.coordinatekit.foundation:bump-version-gradle` is a Gradle plugin, applied under the id `org.coordinatekit.foundation.bump-version`, that moves a build's version across every tracked file that names it. It replaces the version-bumping script each CoordinateKit repository used to copy, so a new document format becomes a pull request here rather than a local edit in each. Every anchor comes from the Gradle model: the root project's group, the names of its subprojects, and the root project's own name. A repository configures only the paths to leave alone.
+`org.coordinatekit.foundation:version-references-gradle` is a Gradle plugin, applied under the id `org.coordinatekit.foundation.version-references`, that rewrites the version references in a build's documents and build files at release time. It takes the version being released and the snapshot that follows it, and moves every tracked file that names the project to the right one of the two. The build's own version declaration is left to the release tooling, such as gradle-release. The plugin replaces the version-bumping script each CoordinateKit repository used to copy, so a new document format becomes a pull request here rather than a local edit in each. Every anchor comes from the Gradle model: the root project's group, the names of its subprojects, and the root project's own name. A repository configures only the paths to leave alone.
 
 The plugin publishes to Maven Central and needs nothing from the Gradle Plugin Portal, so `settings.gradle` needs only `mavenCentral()` among its plugin repositories. For `-SNAPSHOT` versions, see [RELEASE.md](RELEASE.md#consuming-snapshots):
 
@@ -288,55 +288,53 @@ The plugin goes on the root project, and only there. Applying it to a subproject
 
 ```groovy
 plugins {
-    id "org.coordinatekit.foundation.bump-version" version "0.4.0-SNAPSHOT"
+    id "org.coordinatekit.foundation.version-references" version "0.4.0-SNAPSHOT"
 }
 
 group = "com.example.widgets"
-version = "1.2.0-SNAPSHOT"
 ```
 
-The version can instead be a `version=` entry in `gradle.properties`. Either way the task reads it from the build, and it reads the group the same way, so both can be set after the `plugins` block.
+The group can be set after the `plugins` block, in `allprojects` or from a property, because the plugin reads it when the task runs.
 
 ```
-./gradlew bumpVersion --to=<version>
+./gradlew rewriteVersionReferences --release=<version> --next=<version>-SNAPSHOT
 ```
 
-The task lists the files Git tracks under the root project, skips the binary ones, and rewrites each place a file names the current version. `--from=<version>` names the current version when it is not the build's, for a build that declares none. A build that tracks a file as data, such as a test fixture or an archived document, leaves it out with `exclude`:
+The task lists the files Git tracks under the root project, skips the binary ones, and rewrites each place a file names the project's version. `--release` must not end in `-SNAPSHOT` and `--next` must. When either option is absent, the task reads the `release.releaseVersion` and `release.newVersion` project properties, which gradle-release passes into its nested builds, so a build that uses it needs no options. A build that tracks a file as data, such as a test fixture or an archived document, leaves it out with `exclude`:
 
 ```groovy
-foundationVersion {
+foundationVersionReferences {
     exclude "docs/archive/**", "src/test/resources/**"
 }
 ```
 
-Globs are relative to the root project and use `/`. `*` matches within one path segment, `?` matches one character, and `**` matches across segments. A leading `**/` also matches at the root, and a glob ending in `/` excludes everything under that directory.
+Globs are relative to the root project and use `/`. `*` matches within one path segment, `?` matches one character, and `**` matches across segments. A leading `**/` also matches at the root, and a glob ending in `/` excludes everything under that directory. An exclude that matches no tracked file logs a warning.
 
 ### What it rewrites
 
 Each rule is anchored to the group, the module names, or the root project's name, so a dependency a document happens to name is left alone. With the group `com.example.widgets`, a module `alpha-core`, and a root project `widgets`, the forms are:
 
-| Form                 | Example                                                                                             |
-| -------------------- | --------------------------------------------------------------------------------------------------- |
-| Build version        | `version=1.2.0-SNAPSHOT`, `version = "1.2.0-SNAPSHOT"`, or a POM `<version>` outside any dependency |
-| Coordinate           | `com.example.widgets:alpha-core:1.1.0`                                                              |
-| Maven dependency     | a `<dependency>` block with that group and a module as its `artifactId`                             |
-| Jar filename         | `alpha-core-1.1.0.jar`, `alpha-core-1.1.0-sources.jar`                                              |
-| Plugin id            | `id "com.example.widgets.gizmo" version "1.1.0"`, in Groovy or Kotlin form                          |
-| Archive name         | `widgets-1.1.0.tar.gz`, or a `widgets-1.1.0/` directory inside one                                  |
-| Printed version line | `widgets 1.1.0 (build 7)`                                                                           |
+| Form                 | Example                                                                    | Moves to                                                   |
+| -------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Coordinate           | `com.example.widgets:alpha-core:1.1.0`                                     | the release, or the next version if it shows a `-SNAPSHOT` |
+| Maven dependency     | a `<dependency>` block with that group and a module as its `artifactId`    | the release, or the next version if it shows a `-SNAPSHOT` |
+| Jar filename         | `alpha-core-1.1.0.jar`, `alpha-core-1.1.0-sources.jar`                     | the release                                                |
+| Plugin id            | `id "com.example.widgets.gizmo" version "1.1.0"`, in Groovy or Kotlin form | the release                                                |
+| Archive name         | `widgets-1.1.0.tar.gz`, or a `widgets-1.1.0/` directory inside one         | the release                                                |
+| Printed version line | `widgets 1.1.0 (build 7)`                                                  | the release                                                |
 
-A version held in a property, such as `${widgets.version}`, is never rewritten.
+A coordinate or dependency is judged mention by mention, so a release coordinate and a snapshot coordinate on one line each go their own way. The other forms only ever advertise a release, so they move to the release version whatever version they show, including a `-SNAPSHOT`. A document that shows release coordinates keeps advertising the version that was just released, and one that shows snapshot coordinates tracks the version in development.
 
-Two invariants keep the examples in a repository's documents self-maintaining. The forms that name the last release, which are the coordinates, Maven dependencies, jar filenames, plugin ids, archive names, and version lines, are rewritten when the new version is a release and are left alone when it is a `-SNAPSHOT`, so a document keeps advertising the version that was just released while `main` moves on. Snapshot coordinates and Maven dependencies, which name the version in development, work the other way: a bump to a `-SNAPSHOT` rewrites them and a release bump leaves them alone. A line that shows a `-SNAPSHOT` is never turned into a release by the first group. The exception is a jar filename, plugin id, archive name, or version line written at exactly the current `-SNAPSHOT`, which the bump moves along with the version, so the release bump turns an example written at the snapshot into the release.
+A version held in a property, such as `${widgets.version}`, is never rewritten, and neither is the build's own `version=` declaration or a POM's project `<version>`. Running the task a second time changes nothing and succeeds, so a release step that is retried after a failure is safe.
 
 ### The check
 
-Before it writes anything, the task looks for a mention of the project that no rule recognised. A line is reported when it contains a coordinate of the project's group, a plugin id of that group (in a `plugins` block or in a version catalog, as a table or as an `"<id>:<version>"` string), a module jar filename, or a root archive name, shows a version other than the new one, and is of the kind the bump moves. A line that a rule did recognise is reported too when a second mention on it keeps a version the rules left alone, as in `com.example.widgets:beta:1.2.3 and com.example.widgets:alpha-core:1.0.0.Final`. The build fails listing each `file:line`, and no file is written:
+Before it writes anything, the task looks for a mention of the project that no rule recognised. A line is reported when it contains a coordinate of the project's group, a plugin id of that group (in a `plugins` block or in a version catalog, as a table or as an `"<id>:<version>"` string), a module jar filename, or a root archive name, and shows a version that is neither the release nor the next version, and no rule matched it. A line that a rule did recognise is reported too when a second mention on it keeps a version the rules left alone, as in `com.example.widgets:beta:1.2.3 and com.example.widgets:alpha-core:1.0.0.Final`. The build fails listing each `file:line`, and no file is written:
 
 ```
 These lines name the project with a version that no rule recognises. Nothing was written.
   docs/setup.md:14
-Add a rule to coordinatekit-foundation, or leave the file out with foundationVersion { exclude "<path>" }.
+Add a rule to coordinatekit-foundation, or leave the file out with foundationVersionReferences { exclude "<path>" }.
 ```
 
-The same refusal covers a current version that appears in no tracked file, a bump that changes no file, and a build whose own version declaration the bump did not find. The check cannot see a version held in a map notation, a Gradle declaration split across lines, or a property, so those need the file reviewed by hand.
+The check cannot see a version held in a map notation, a Gradle declaration split across lines, or a property, so those need the file reviewed by hand.
