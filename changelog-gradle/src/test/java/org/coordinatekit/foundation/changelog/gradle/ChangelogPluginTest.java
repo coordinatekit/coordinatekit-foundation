@@ -44,6 +44,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Properties;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -73,6 +74,11 @@ class ChangelogPluginTest {
      * @param repoUrl the configured value, {@code null} for none
      */
     private record BlankRepoUrlParameters(String name, String repoUrl) {}
+
+    /**
+     * Matches a rendered commit link, such as {@code ([1a2b3c4](https://…/commit/<40 hex digits>))}.
+     */
+    private static final Pattern COMMIT_LINK = Pattern.compile("\\(\\[[0-9a-f]+\\]\\([^)]*/commit/[0-9a-f]{40}\\)\\)");
 
     /** The id the plugin is applied under. */
     private static final String PLUGIN_ID = "org.coordinatekit.foundation.changelog";
@@ -211,7 +217,7 @@ class ChangelogPluginTest {
 
         // ASSERT //
         String changelog = Files.readString(directory.resolve("CHANGELOG.md"));
-        String hashless = changelog.replaceAll("\\(\\[[0-9a-f]+\\]\\([^)]*/commit/[0-9a-f]{40}\\)\\)", "(HASH)");
+        String hashless = hashless(changelog);
         String latest = releaseBody(hashless, "0.2.0");
         String first = releaseBody(hashless, "0.1.0");
         assertTrue(latest.startsWith("## [0.2.0] - 2026-01-05\n"), changelog);
@@ -269,14 +275,19 @@ class ChangelogPluginTest {
             String released = Files.readString(file);
             List<String> tagsBefore = tagNames(git);
 
-            tag(git, "v0.3.0", 7);
+            tag(git, "v0.3.0", 9);
             runner(directory).withArguments("gitChangelog", "-Prelease.releaseVersion=0.3.0").build();
+            String taggedWithProperty = Files.readString(file);
+
+            runner(directory).withArguments("gitChangelog").build();
             String tagged = Files.readString(file);
 
             // ASSERT //
             assertFalse(unset.contains("sprocket"), "an unset releaseVersion leaves the commit out:\n" + unset);
+            assertTrue(unset.contains("## [0.2.0]"), "the tagged history still renders:\n" + unset);
+            assertEquals(unset.indexOf("## ["), unset.indexOf("## [0.2.0]"), "0.2.0 is the topmost release:\n" + unset);
 
-            String hashless = released.replaceAll("\\(\\[[0-9a-f]+\\]\\([^)]*/commit/[0-9a-f]{40}\\)\\)", "(HASH)");
+            String hashless = hashless(released);
             String release = releaseBody(hashless, "0.3.0");
             assertTrue(release.startsWith("## [0.3.0] - 2026-01-07\n"), released);
             assertTrue(sectionBody(release, "Features").contains("- add the sprocket (HASH)\n"), released);
@@ -285,7 +296,12 @@ class ChangelogPluginTest {
             assertFalse(releaseBody(hashless, "0.2.0").contains("sprocket"), released);
             assertEquals(List.of("v0.1.0", "v0.2.0"), tagsBefore, "the release writes no tag of its own");
 
-            assertEquals(released, tagged, "tagging HEAD changes nothing about the release");
+            assertEquals(
+                    released,
+                    taggedWithProperty,
+                    "a tag dated later leaves the release date at HEAD's commit time"
+            );
+            assertEquals(released, tagged, "regenerating after the tag without the property comes out the same");
         }
     }
 
@@ -390,6 +406,17 @@ class ChangelogPluginTest {
 
     private static GitChangelogTask gitChangelog(Project project) {
         return (GitChangelogTask) project.getTasks().getByName("gitChangelog");
+    }
+
+    /**
+     * Replaces each rendered commit link with {@code (HASH)}, so an assertion does not depend on the
+     * hashes a fixture happens to produce.
+     *
+     * @param changelog the rendered changelog
+     * @return the changelog with every commit link reduced to the placeholder
+     */
+    private static String hashless(String changelog) {
+        return COMMIT_LINK.matcher(changelog).replaceAll("(HASH)");
     }
 
     /**
