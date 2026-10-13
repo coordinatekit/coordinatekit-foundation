@@ -521,24 +521,14 @@ foundationChangelog {
     releaseVersion = providers.gradleProperty("release.releaseVersion")
 }
 
-// A dry run does everything a release does except push or publish to Central. gradle-release passes
-// every -P value into its nested builds, so the outer build and both inner ones agree.
-def releaseDryRun = providers.gradleProperty("releaseDryRun").map { it.toBoolean() }.getOrElse(false)
-
-// Publishing comes last because it cannot be repeated; everything that can fail cheaply runs first.
-// gradle-release appends ` '<tag>'.` to each message, and both commits are `chore:` so the changelog
-// template never renders them.
 release {
     tagTemplate = 'v$version'
     preTagCommitMessage = "chore: release"
     tagCommitMessage = "release"
     newVersionCommitMessage = "chore: start"
-    buildTasks = ["check", "aggregateJavadoc", "gitChangelog"] +
-            (releaseDryRun ? [] : ["publishAggregationToCentralPortal"])
-    if (releaseDryRun) {
-        git {
-            pushToRemote = false
-        }
+    buildTasks = ["check", "aggregateJavadoc", "gitChangelog"]
+    git {
+        pushToRemote = false
     }
 }
 
