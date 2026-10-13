@@ -27,6 +27,21 @@ jobs:
       contents: write
 
     steps:
+      - name: Validate inputs
+        env:
+          RELEASE: ${{ inputs.release }}
+          NEXT: ${{ inputs.next }}
+        run: |
+          shape='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+          if [[ ! "$RELEASE" =~ $shape ]]; then
+            echo "::error::release must look like 1.0.0, without a leading v: '$RELEASE'"
+            exit 1
+          fi
+          if [[ ! "$NEXT" =~ $shape || "$NEXT" == *-SNAPSHOT ]]; then
+            echo "::error::next must look like 1.1.0, and the workflow appends -SNAPSHOT itself: '$NEXT'"
+            exit 1
+          fi
+
       - name: Create App token
         id: app
         uses: actions/create-github-app-token@v2
@@ -52,9 +67,11 @@ jobs:
       - name: Configure git identity
         env:
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
+          BOT_ID=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
           git config user.name "${APP_SLUG}[bot]"
-          git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
+          git config user.email "${BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
 
       - name: Release
         env:
@@ -77,7 +94,12 @@ jobs:
           VERSION: ${{ inputs.release }}
         run: |
           ESCAPED=$(echo "$VERSION" | sed 's/\./\\./g')
-          awk "/^## \[${ESCAPED}\]/{flag=1;next}/^## /{flag=0}flag" CHANGELOG.md > release-notes.md
+          awk "/^## \[${ESCAPED}\]/{flag=1;next}/^## /{flag=0}flag" CHANGELOG.md \
+            | grep -v '^\[[^]]*\]: ' > release-notes.md || true
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no notes under '## [$VERSION]'"
+            exit 1
+          fi
           cat release-notes.md
 
       - name: Create GitHub Release

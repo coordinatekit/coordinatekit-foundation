@@ -18,7 +18,7 @@ The `main` ruleset requires a pull request, and only an organization admin bypas
 4. Store the App's numeric id and the PEM text as organization secrets named `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`, granted to those repositories.
 5. Add the App as a bypass actor on the `main` ruleset and the `release-tags` ruleset, choosing it by name in each ruleset's bypass list. The `release-branches` ruleset is untouched.
 
-The private key rotates by generating a new one on the App's page and updating the secret. A leaked token can push to the installed repositories' contents for at most an hour and nothing else. The noreply address the workflow configures attributes the commits to the bot. For GitHub's verified badge the address also needs the bot's user id in front, as `<id>+<slug>[bot]@users.noreply.github.com`, which `gh api users/<slug>[bot]` reports.
+The private key rotates by generating a new one on the App's page and updating the secret. A leaked token can push to the installed repositories' contents for at most an hour and nothing else. The workflow looks up the bot's user id with the App token and configures the address as `<id>+<slug>[bot]@users.noreply.github.com`, the form GitHub uses to link the commits to the App's profile and avatar. The commits are made with the `git` CLI and are not signed, so GitHub shows them as unverified whatever the address says.
 
 ## Publishing locally
 
