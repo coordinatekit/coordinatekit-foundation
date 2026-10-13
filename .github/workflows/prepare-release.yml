@@ -37,18 +37,10 @@ jobs:
           chmod +x scripts/bump-version.sh
           scripts/bump-version.sh "$VERSION"
 
-      - name: Create temporary tag
-        env:
-          VERSION: ${{ inputs.version }}
-        run: git tag "v${VERSION}"
-
       - name: Generate changelog
-        run: ./gradlew gitChangelog
-
-      - name: Delete temporary tag
         env:
           VERSION: ${{ inputs.version }}
-        run: git tag -d "v${VERSION}"
+        run: ./gradlew gitChangelog -Prelease.releaseVersion="$VERSION"
 
       - name: Create pull request
         uses: peter-evans/create-pull-request@v8

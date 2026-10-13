@@ -27,6 +27,7 @@ import org.gradle.api.provider.Property;
  * foundationChangelog {
  *     fromRevision = "v0.1.0"
  *     initialRelease = file(".infra/changelog_initial_release.md")
+ *     releaseVersion = providers.gradleProperty("release.releaseVersion")
  * }
  * </pre>
  *
@@ -53,6 +54,26 @@ public abstract class ChangelogExtension {
      * @return the file holding the pre-conventional-commits releases
      */
     public abstract RegularFileProperty getInitialRelease();
+
+    /**
+     * The version being released, such as {@code 0.4.0}, under which the commits above the last tag
+     * render. Unset by default, which leaves those commits out of the changelog. While it is set, they
+     * render as the release {@code v<releaseVersion>}, with the heading, date, and link a tag on
+     * {@code HEAD} would give them, so a release can write its changelog before the tag exists.
+     *
+     * <p>
+     * The value is three dot-separated numbers without the {@code v}, which the plugin adds. Anything
+     * else, including a blank value, fails the build before the task runs, because git-changelog would
+     * otherwise drop the commits or link a tag that does not exist.
+     *
+     * <p>
+     * Nothing is added once {@code HEAD} is tagged. A changelog regenerated after the tag comes out the
+     * same only while the tagged commit has the date of the newest commit the file was generated from
+     * and brings no commit of its own that the template renders.
+     *
+     * @return the version the untagged commits are released as
+     */
+    public abstract Property<String> getReleaseVersion();
 
     /**
      * The repository's web address, such as {@code https://github.com/coordinatekit/crf}. The template

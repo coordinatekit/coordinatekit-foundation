@@ -58,6 +58,14 @@ foundationChangelog {
 }
 ```
 
+A release can write its changelog before its tag exists. With `releaseVersion` set, the commits above the last tag render as that release, under the heading, date, and link a tag on `HEAD` would give them. The value is three dot-separated numbers such as `0.4.0`, without the `v` the plugin adds, and anything else fails the build before the task runs. The release is dated from the newest commit it holds, so a changelog regenerated once the tag is pushed comes out the same only while the tagged commit has that date and adds no commit of its own that the template renders. A release pull request merged the next day, for example, dates the regenerated heading a day later. Unset, which is the default, those commits stay out of the file. A build released through gradle-release reads it from the property that plugin passes into its nested builds:
+
+```groovy
+foundationChangelog {
+    releaseVersion = providers.gradleProperty("release.releaseVersion")
+}
+```
+
 ## Concordance
 
 Concordance is the member-order rule CoordinateKit's Java sources follow. A type declares its enum constants, then its constants, then its fields, then its constructors, then its methods, and each category is sorted alphabetically and case-insensitively inside itself. Constructors are the one exception, running by ascending parameter count. Nested types can sit anywhere in a type, and their own members are checked like any other type's. An Error Prone check enforces the rule and a Gradle plugin configures the check, so a consuming build writes no `-Xep` flags of its own.

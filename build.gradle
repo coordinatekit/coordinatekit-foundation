@@ -514,6 +514,12 @@ foundationVersionReferences {
     exclude "version-references-gradle/src/test/**", "scripts/bump-version.test.sh"
 }
 
+// The Prepare Release workflow passes the version being released, so the commits above the last tag
+// render under it before its tag exists.
+foundationChangelog {
+    releaseVersion = providers.gradleProperty("release.releaseVersion")
+}
+
 // concordance-errorprone's sources name javac's own AST and symbol types, which the jdk.compiler
 // module does not export.
 tasks.named("aggregateJavadoc", Javadoc) {

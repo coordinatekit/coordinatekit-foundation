@@ -44,6 +44,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Properties;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -74,6 +75,20 @@ class ChangelogPluginTest {
      */
     private record BlankRepoUrlParameters(String name, String repoUrl) {}
 
+    /**
+     * One release version that the guard has to reject.
+     *
+     * @param name what the case shows
+     * @param releaseVersion the configured value
+     * @param hintsAtPrefix whether the message should tell the user to drop a leading {@code v}
+     */
+    private record ReleaseVersionParameters(String name, String releaseVersion, boolean hintsAtPrefix) {}
+
+    /**
+     * Matches a rendered commit link, such as {@code ([1a2b3c4](https://…/commit/<40 hex digits>))}.
+     */
+    private static final Pattern COMMIT_LINK = Pattern.compile("\\(\\[[0-9a-f]+\\]\\([^)]*/commit/[0-9a-f]{40}\\)\\)");
+
     /** The id the plugin is applied under. */
     private static final String PLUGIN_ID = "org.coordinatekit.foundation.changelog";
 
@@ -91,6 +106,27 @@ class ChangelogPluginTest {
         // ASSERT //
         assertTrue(project.getPlugins().hasPlugin("se.bjurr.gitchangelog.git-changelog-gradle-plugin"));
         assertFalse(project.getExtensions().getByType(ChangelogExtension.class).getRepoUrl().isPresent());
+    }
+
+    @Test
+    void apply__failsOnMalformedReleaseVersion(@TempDir Path directory) throws GitAPIException, IOException {
+        // ARRANGE //
+        writeFixture(directory, REPO_URL, """
+
+                foundationChangelog {
+                    releaseVersion = "v0.3.0"
+                }
+                """);
+        writeHistory(directory);
+        Path changelog = Files.writeString(directory.resolve("CHANGELOG.md"), "previous");
+
+        // ACT //
+        BuildResult result = runner(directory).withArguments("gitChangelog").buildAndFail();
+
+        // ASSERT //
+        assertTrue(result.getOutput().contains("foundationChangelog.releaseVersion must be"), result.getOutput());
+        assertTrue(result.getOutput().contains("Drop the leading v"), result.getOutput());
+        assertEquals("previous", Files.readString(changelog), "the changelog is untouched");
     }
 
     @Test
@@ -147,6 +183,24 @@ class ChangelogPluginTest {
     }
 
     @Test
+    void apply__flowsReleaseVersionToUntaggedName() {
+        // ARRANGE //
+        Project project = ProjectBuilder.builder().build();
+        project.getPluginManager().apply(PLUGIN_ID);
+        ChangelogExtension extension = project.getExtensions().getByType(ChangelogExtension.class);
+
+        GitChangelogTask task = gitChangelog(project);
+        boolean unsetBefore = !task.untaggedName.isPresent();
+
+        // ACT //
+        extension.getReleaseVersion().set("0.3.0");
+
+        // ASSERT //
+        assertTrue(unsetBefore);
+        assertEquals("v0.3.0", task.untaggedName.get());
+    }
+
+    @Test
     void apply__leavesThePreviousFileWhenNothingIsWritten(@TempDir Path directory) throws IOException {
         // ARRANGE //
         // No history, so git-changelog finds no repository, logs the error, and finishes green.
@@ -193,7 +247,7 @@ class ChangelogPluginTest {
 
         // ASSERT //
         String changelog = Files.readString(directory.resolve("CHANGELOG.md"));
-        String hashless = changelog.replaceAll("\\(\\[[0-9a-f]+\\]\\([^)]*/commit/[0-9a-f]{40}\\)\\)", "(HASH)");
+        String hashless = hashless(changelog);
         String latest = releaseBody(hashless, "0.2.0");
         String first = releaseBody(hashless, "0.1.0");
         assertTrue(latest.startsWith("## [0.2.0] - 2026-01-05\n"), changelog);
@@ -225,6 +279,60 @@ class ChangelogPluginTest {
         assertFalse(changelog.contains("start the repository"), "chore commits have no section");
         assertTrue(latest.contains("[0.2.0]: " + REPO_URL + "/releases/tag/v0.2.0"), changelog);
         assertFalse(changelog.contains("(#12)"), "the pull request reference moves out of the description");
+    }
+
+    @Test
+    void apply__rendersUnreleasedCommitsUnderReleaseVersion(@TempDir Path directory)
+            throws GitAPIException, IOException {
+        // ARRANGE //
+        writeFixture(directory, REPO_URL, """
+
+                foundationChangelog {
+                    releaseVersion = providers.gradleProperty("release.releaseVersion")
+                }
+                """);
+        writeHistory(directory);
+        Path file = directory.resolve("CHANGELOG.md");
+
+        try (Git git = Git.open(directory.toFile())) {
+            commit(git, "feat: add the sprocket", 7);
+
+            // ACT //
+            runner(directory).withArguments("gitChangelog").build();
+            String unset = Files.readString(file);
+
+            runner(directory).withArguments("gitChangelog", "-Prelease.releaseVersion=0.3.0").build();
+            String released = Files.readString(file);
+            List<String> tagsBefore = tagNames(git);
+
+            tag(git, "v0.3.0", 9);
+            runner(directory).withArguments("gitChangelog", "-Prelease.releaseVersion=0.3.0").build();
+            String taggedWithProperty = Files.readString(file);
+
+            runner(directory).withArguments("gitChangelog").build();
+            String tagged = Files.readString(file);
+
+            // ASSERT //
+            assertFalse(unset.contains("sprocket"), "an unset releaseVersion leaves the commit out:\n" + unset);
+            assertTrue(unset.contains("## [0.2.0]"), "the tagged history still renders:\n" + unset);
+            assertEquals(unset.indexOf("## ["), unset.indexOf("## [0.2.0]"), "0.2.0 is the topmost release:\n" + unset);
+
+            String hashless = hashless(released);
+            String release = releaseBody(hashless, "0.3.0");
+            assertTrue(release.startsWith("## [0.3.0] - 2026-01-07\n"), released);
+            assertTrue(sectionBody(release, "Features").contains("- add the sprocket (HASH)\n"), released);
+            assertTrue(release.contains("[0.3.0]: " + REPO_URL + "/releases/tag/v0.3.0"), released);
+            assertTrue(released.indexOf("## [0.3.0]") < released.indexOf("## [0.2.0]"), released);
+            assertFalse(releaseBody(hashless, "0.2.0").contains("sprocket"), released);
+            assertEquals(List.of("v0.1.0", "v0.2.0"), tagsBefore, "the release writes no tag of its own");
+
+            assertEquals(
+                    released,
+                    taggedWithProperty,
+                    "a tag dated later leaves the release date at HEAD's commit time"
+            );
+            assertEquals(released, tagged, "regenerating after the tag without the property comes out the same");
+        }
     }
 
     @Test
@@ -331,6 +439,17 @@ class ChangelogPluginTest {
     }
 
     /**
+     * Replaces each rendered commit link with {@code (HASH)}, so an assertion does not depend on the
+     * hashes a fixture happens to produce.
+     *
+     * @param changelog the rendered changelog
+     * @return the changelog with every commit link reduced to the placeholder
+     */
+    private static String hashless(String changelog) {
+        return COMMIT_LINK.matcher(changelog).replaceAll("(HASH)");
+    }
+
+    /**
      * Returns the identity every fixture commit and tag carries. The time is noon UTC, which renders as
      * the same {@code yyyy-MM-dd} date in whatever zone the daemon runs.
      *
@@ -363,7 +482,7 @@ class ChangelogPluginTest {
         // ACT //
         GradleException thrown = assertThrows(
                 GradleException.class,
-                () -> ChangelogPlugin.prepare(parameters.repoUrl(), null, staged)
+                () -> ChangelogPlugin.prepare(parameters.repoUrl(), null, null, staged)
         );
 
         // ASSERT //
@@ -377,7 +496,7 @@ class ChangelogPluginTest {
         Path staged = directory.resolve("tmp/gitChangelog/CHANGELOG.md");
 
         // ACT //
-        ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, staged);
+        ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, null, staged);
 
         // ASSERT //
         assertTrue(Files.isDirectory(staged.getParent()));
@@ -390,7 +509,7 @@ class ChangelogPluginTest {
         Path staged = Files.writeString(directory.resolve("CHANGELOG.md"), "stale");
 
         // ACT //
-        ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, staged);
+        ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, null, staged);
 
         // ASSERT //
         assertFalse(Files.exists(staged));
@@ -405,11 +524,58 @@ class ChangelogPluginTest {
         // ACT //
         GradleException thrown = assertThrows(
                 GradleException.class,
-                () -> ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", initialRelease, staged)
+                () -> ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", initialRelease, null, staged)
         );
 
         // ASSERT //
         assertTrue(thrown.getMessage().contains(initialRelease.toString()), thrown.getMessage());
+        assertEquals("kept", Files.readString(staged), "a rejected run leaves the file alone");
+    }
+
+    @Test
+    void prepare__releaseVersionAccepted(@TempDir Path directory) {
+        // ARRANGE //
+        Path staged = directory.resolve("CHANGELOG.md");
+
+        // ACT //
+        ChangelogPlugin.prepare("https://github.com/coordinatekit/crf", null, "10.20.30", staged);
+
+        // ASSERT //
+        assertFalse(Files.exists(staged));
+    }
+
+    static Stream<ReleaseVersionParameters> prepare__releaseVersionRejected() {
+        return Stream.of(
+                new ReleaseVersionParameters("empty", "", false),
+                new ReleaseVersionParameters("whitespace", "  ", false),
+                new ReleaseVersionParameters("leading v", "v0.3.0", true),
+                new ReleaseVersionParameters("two parts", "1.0", false),
+                new ReleaseVersionParameters("prerelease", "0.3.0-rc.1", false),
+                new ReleaseVersionParameters("snapshot", "0.3.0-SNAPSHOT", false)
+        );
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource
+    void prepare__releaseVersionRejected(ReleaseVersionParameters parameters, @TempDir Path directory)
+            throws IOException {
+        // ARRANGE //
+        Path staged = Files.writeString(directory.resolve("CHANGELOG.md"), "kept");
+
+        // ACT //
+        GradleException thrown = assertThrows(
+                GradleException.class,
+                () -> ChangelogPlugin
+                        .prepare("https://github.com/coordinatekit/crf", null, parameters.releaseVersion(), staged)
+        );
+
+        // ASSERT //
+        assertTrue(thrown.getMessage().contains("foundationChangelog.releaseVersion"), thrown.getMessage());
+        assertEquals(
+                parameters.hintsAtPrefix(),
+                thrown.getMessage().contains("Drop the leading v"),
+                thrown.getMessage()
+        );
         assertEquals("kept", Files.readString(staged), "a rejected run leaves the file alone");
     }
 
@@ -513,6 +679,22 @@ class ChangelogPluginTest {
      */
     private static void tag(Git git, String name, int day) throws GitAPIException {
         git.tag().setName(name).setMessage(name).setTagger(person(day)).setAnnotated(true).setSigned(false).call();
+    }
+
+    /**
+     * Returns the short names of the repository's tags, sorted.
+     *
+     * @param git the repository to read
+     * @return the tag names, such as {@code v0.1.0}
+     * @throws GitAPIException if the tags cannot be listed
+     */
+    private static List<String> tagNames(Git git) throws GitAPIException {
+        return git.tagList()
+                .call()
+                .stream()
+                .map(ref -> ref.getName().substring("refs/tags/".length()))
+                .sorted()
+                .toList();
     }
 
     @Test
