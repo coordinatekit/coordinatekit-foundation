@@ -10,6 +10,7 @@ plugins {
     id "jacoco-report-aggregation"
     id "java-library"
     alias(libs.plugins.nmcp.aggregation)
+    alias(libs.plugins.release)
     id "org.coordinatekit.foundation.changelog"
 }
 
@@ -509,15 +510,42 @@ aggregateJavadoc {
 }
 
 // The plugin's own test fixtures carry version literals that are test data, not references to this
-// project's version, and so do the assertions in the bash suite that pins the script.
+// project's version.
 foundationVersionReferences {
-    exclude "version-references-gradle/src/test/**", "scripts/bump-version.test.sh"
+    exclude "version-references-gradle/src/test/**"
 }
 
-// The Prepare Release workflow passes the version being released, so the commits above the last tag
-// render under it before its tag exists.
+// gradle-release passes the version being released into its nested builds, so the commits above the
+// last tag render under it before its tag exists.
 foundationChangelog {
     releaseVersion = providers.gradleProperty("release.releaseVersion")
+}
+
+// A dry run does everything a release does except push or publish to Central. gradle-release passes
+// every -P value into its nested builds, so the outer build and both inner ones agree.
+def releaseDryRun = providers.gradleProperty("releaseDryRun").map { it.toBoolean() }.getOrElse(false)
+
+// Publishing comes last because it cannot be repeated; everything that can fail cheaply runs first.
+// gradle-release appends ` '<tag>'.` to each message, and both commits are `chore:` so the changelog
+// template never renders them.
+release {
+    tagTemplate = 'v$version'
+    preTagCommitMessage = "chore: release"
+    tagCommitMessage = "release"
+    newVersionCommitMessage = "chore: start"
+    buildTasks = ["check", "aggregateJavadoc", "gitChangelog"] +
+            (releaseDryRun ? [] : ["publishAggregationToCentralPortal"])
+    if (releaseDryRun) {
+        git {
+            pushToRemote = false
+        }
+    }
+}
+
+// The documents are rewritten ahead of the build that checks and publishes them, so the commit that
+// gradle-release makes carries them along with gradle.properties and CHANGELOG.md.
+tasks.named("beforeReleaseBuild") {
+    dependsOn tasks.named("rewriteVersionReferences")
 }
 
 // concordance-errorprone's sources name javac's own AST and symbol types, which the jdk.compiler
