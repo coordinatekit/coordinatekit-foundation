@@ -292,7 +292,17 @@ The group can be set after the `plugins` block, in `allprojects` or from a prope
 ./gradlew rewriteVersionReferences --release=<version> --next=<version>-SNAPSHOT
 ```
 
-The task lists the files Git tracks under the root project, skips the binary ones, and rewrites each place a file names the project's version. `--release` must not end in `-SNAPSHOT` and `--next` must. When either option is absent, the task reads the `release.releaseVersion` and `release.newVersion` project properties, which gradle-release passes into its nested builds, so a build that uses it needs no options. A build that tracks a file as data, such as a test fixture or an archived document, leaves it out with `exclude`:
+The task lists the files Git tracks under the root project, skips the binary ones, and rewrites each place a file names the project's version. `--release` must not end in `-SNAPSHOT` and `--next` must. When either option is absent, the task reads the `release.releaseVersion` and `release.newVersion` project properties, which gradle-release passes into its nested builds, so a build that uses it needs no options.
+
+A build released through gradle-release runs the rewrite ahead of the build tasks that check and publish it, so the commit gradle-release makes carries the rewritten documents along with the version file:
+
+```groovy
+tasks.named("beforeReleaseBuild") {
+    dependsOn tasks.named("rewriteVersionReferences")
+}
+```
+
+A build that tracks a file as data, such as a test fixture or an archived document, leaves it out with `exclude`:
 
 ```groovy
 foundationVersionReferences {

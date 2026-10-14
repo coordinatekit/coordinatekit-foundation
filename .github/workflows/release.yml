@@ -1,25 +1,59 @@
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
-
-permissions:
-  contents: write
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Version to release (e.g., 0.4.0)"
+        type: string
+        required: true
+      next:
+        description: "Next development version, without -SNAPSHOT (e.g., 0.5.0)"
+        type: string
+        required: true
+      dry_run:
+        description: "Run the whole release without pushing or publishing"
+        type: boolean
+        default: false
 
 concurrency:
   group: release-publish
   cancel-in-progress: false
 
 jobs:
-  build-and-publish:
+  release:
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
     steps:
+      - name: Validate inputs
+        env:
+          RELEASE: ${{ inputs.release }}
+          NEXT: ${{ inputs.next }}
+        run: |
+          shape='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+          if [[ ! "$RELEASE" =~ $shape ]]; then
+            echo "::error::release must look like 1.0.0, without a leading v: '$RELEASE'"
+            exit 1
+          fi
+          if [[ ! "$NEXT" =~ $shape || "$NEXT" == *-SNAPSHOT ]]; then
+            echo "::error::next must look like 1.1.0, and the workflow appends -SNAPSHOT itself: '$NEXT'"
+            exit 1
+          fi
+
+      - name: Create App token
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          token: ${{ steps.app.outputs.token }}
+          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v6.0.1
@@ -30,37 +64,87 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Build
-        run: ./gradlew build
+      - name: Configure git identity
+        env:
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          BOT_ID=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
 
-      - name: Javadoc
-        run: ./gradlew aggregateJavadoc
+      - name: Release
+        env:
+          RELEASE: ${{ inputs.release }}
+          NEXT: ${{ inputs.next }}
+        run: |
+          ./gradlew release --no-configuration-cache \
+            -Prelease.useAutomaticVersion=true \
+            -Prelease.releaseVersion="$RELEASE" \
+            -Prelease.newVersion="${NEXT}-SNAPSHOT"
+
+      - name: Extract release notes
+        env:
+          VERSION: ${{ inputs.release }}
+        run: |
+          ESCAPED=$(echo "$VERSION" | sed 's/\./\\./g')
+          awk "/^## \[${ESCAPED}\]/{flag=1;next}/^## /{flag=0}flag" CHANGELOG.md \
+            | grep -v '^\[[^]]*\]: ' > release-notes.md || true
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no notes under '## [$VERSION]'"
+            exit 1
+          fi
+          cat release-notes.md
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: release-notes.md
+
+      - name: Push
+        if: ${{ !inputs.dry_run }}
+        env:
+          RELEASE: ${{ inputs.release }}
+        run: git push --atomic origin HEAD:main "v$RELEASE"
+
+  publish:
+    needs: release
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: v${{ inputs.release }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6.0.1
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Publish to Maven Central
-        run: ./gradlew publishAggregationToCentralPortal
         env:
           ORG_GRADLE_PROJECT_centralPortalUsername: ${{ secrets.SONATYPE_USERNAME }}
           ORG_GRADLE_PROJECT_centralPortalPassword: ${{ secrets.SONATYPE_PASSWORD }}
           ORG_GRADLE_PROJECT_signingKey: ${{ secrets.GPG_PRIVATE_KEY }}
           ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.GPG_PASSPHRASE }}
+        run: ./gradlew publishAggregationToCentralPortal
 
-  github-release:
-    needs: build-and-publish
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Extract release notes
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          VERSION="${TAG#v}"
-          ESCAPED_VERSION=$(echo "$VERSION" | sed 's/\./\\./g')
-          awk "/^## \[${ESCAPED_VERSION}\]/{flag=1;next}/^## /{flag=0}flag" CHANGELOG.md > release-notes.md
+      - name: Download release notes
+        uses: actions/download-artifact@v8
+        with:
+          name: release-notes
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: v${{ inputs.release }}
           body_path: release-notes.md
