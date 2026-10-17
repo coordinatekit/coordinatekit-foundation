@@ -22,7 +22,8 @@
  * This package holds no code. Its two entries, {@code eclipse_java_coordinatekit.xml} and
  * {@code license_header.txt}, live under {@code src/main/resources} and are the whole content of
  * the published jar. It is not a Gradle plugin and configures nothing on its own; a consumer reads
- * whichever entry it wants and wires it into its own build. See README.md for the recipe.
+ * whichever entry it wants and wires it into its own build, so a repository can take one file
+ * without adopting a build integration to get it. See README.md for the recipe.
  *
  * <p>
  * This package declaration deliberately carries no {@code @NullMarked}: an annotated package

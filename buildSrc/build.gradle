@@ -1,7 +1,7 @@
 // Compiles the sources of the plugin modules this repository applies to itself, so that the root
 // build uses them as they stand in the working tree rather than as last released. The sources stay
 // in the real modules, where Spotless, Error Prone, and the tests still check them; this build only
-// compiles a second copy.
+// compiles a second copy. Edit them there: nothing under buildSrc is a copy to change.
 //
 // changelog-gradle is registered as a plugin under its id, because the root build applies it from
 // its `plugins` block, and a release pull request regenerates CHANGELOG.md with the template that
@@ -9,7 +9,8 @@
 // so their sources are only added to compileJava, through its sources and not a source set, so
 // IntelliJ does not see the same directories as two content roots. aggregate-javadoc-gradle may use
 // only the Gradle API and JSpecify, which is all this build gives it; version-references-gradle is
-// the one that also needs JGit, to list the files Git tracks.
+// the one that also needs JGit, to list the files Git tracks. Neither may use Concordance's
+// annotations, because they are not on this build's classpath.
 plugins {
     id "java-gradle-plugin"
 }
@@ -26,6 +27,7 @@ sourceSets {
     }
 }
 
+// Keep in step with the registration in changelog-gradle/build.gradle.
 gradlePlugin {
     plugins {
         changelog {

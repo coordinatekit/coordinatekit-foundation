@@ -452,6 +452,13 @@ public final class Banner {
      * Loads a brand-art resource into its lines, dropping trailing blank lines so the renderer alone
      * controls vertical spacing. Resolves {@code resource} against {@link Banner}'s package. Fails
      * loudly if the resource is missing from the jar.
+     *
+     * <p>
+     * The art lives in {@code .txt} resources rather than Java text blocks: a resource needs no
+     * escaping, diffs as plain text, and art tooling can edit it. Nothing preserves trailing
+     * whitespace, because Spotless trims it from sources and the pre-commit hook from every other file,
+     * so a line of art must never depend on it. {@link #rightPad} applies the padding at render time
+     * instead.
      */
     private static List<String> load(String resource) {
         try (InputStream in = Banner.class.getResourceAsStream(resource)) {

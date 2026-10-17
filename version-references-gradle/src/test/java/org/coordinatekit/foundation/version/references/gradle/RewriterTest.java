@@ -40,6 +40,12 @@ import java.util.stream.Stream;
  * row reads as: under this release and this next version, this text becomes that one. The anchors
  * are synthetic, a group, a root name, and three modules that exist nowhere else, and the versions
  * are ordinary ones, because foundation's own release leaves this directory alone.
+ *
+ * <p>
+ * {@link #rewrite__repositoryDocs} is the one exception. It rewrites this repository's own
+ * {@code README.md} and {@code RELEASE.md} under the anchors the root build passes in as
+ * {@code versionReferences.*} system properties, so no foundation literal sits in a test source,
+ * and it fails when either document carries a mention the rules do not recognise.
  */
 class RewriterTest {
     /**

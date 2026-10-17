@@ -49,7 +49,9 @@ import java.util.regex.Pattern;
  * repository or file error and still finishes green, leaving nothing written. The task is therefore
  * wrapped in a guard: the task renders into its temporary directory, and only once that file exists
  * does the guard move it over {@code CHANGELOG.md}, failing the build when it does not. Either way
- * a failed run leaves the previous {@code CHANGELOG.md} untouched.
+ * a failed run leaves the previous {@code CHANGELOG.md} untouched. Deleting {@code CHANGELOG.md} up
+ * front and restoring it from a {@code doLast} action would not do the same: a task that throws
+ * skips its {@code doLast} actions, so the file would be lost.
  *
  * @see ChangelogExtension
  */

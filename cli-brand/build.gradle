@@ -1,5 +1,8 @@
 description = "Brand banner rendering for CoordinateKit's command-line tools."
 
 dependencies {
+    // The aggregate jar on purpose, rather than jline-terminal plus one provider: it bundles every
+    // terminal provider, so JLine picks the one that matches the consumer's JDK at run time instead
+    // of this module pinning a native backend that is the consumer's to choose.
     implementation libs.jline
 }

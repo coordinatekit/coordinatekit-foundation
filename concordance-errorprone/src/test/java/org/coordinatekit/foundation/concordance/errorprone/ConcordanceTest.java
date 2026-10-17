@@ -33,8 +33,9 @@ import java.util.stream.Stream;
  * Unit tests for {@link Concordance}. Each case compiles a small fixture through
  * {@link CompilationTestHelper} and marks the line a finding is expected on with a
  * {@code // BUG: Diagnostic contains:} comment; a fixture with no such comment must compile without
- * a finding at all. Assertions name the message rather than a line number, so the finding's wording
- * is covered along with its placement.
+ * a finding at all. The comment sits directly above the declaration the finding is reported on,
+ * after any annotation the declaration carries. Assertions name the message rather than a line
+ * number, so the finding's wording is covered along with its placement.
  *
  * <p>
  * One pair of adjacent categories has no test, because Java itself rules it out: an enum constant
