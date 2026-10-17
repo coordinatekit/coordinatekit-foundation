@@ -1,0 +1,8 @@
+description = "ArchUnit rules describing the conventions CoordinateKit's Java modules follow."
+
+dependencies {
+    api libs.archunit
+
+    testImplementation libs.picocli
+    testImplementation libs.slf4j.api
+}

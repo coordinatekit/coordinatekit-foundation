@@ -1,5 +1,6 @@
 [versions]
 # api — update conservatively (security/bugs only)
+archunit = "1.5.1"
 jspecify = "1.0.0"
 
 # provided — compileOnly, supplied by the consumer's build at run time. The published check and
@@ -18,6 +19,7 @@ slf4j = "2.0.20"
 
 # test — always latest
 junit = "6.1.3"
+picocli = "4.7.7"
 
 # build — keep current
 errorprone = "2.50.0"
@@ -27,6 +29,7 @@ nmcp = "1.6.2"
 spotless = "8.10.3"
 
 [libraries]
+archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
 errorprone-check-api = { module = "com.google.errorprone:error_prone_check_api", version.ref = "errorprone-target" }
 # error_prone_core appears twice on purpose: errorprone-core runs this repository's own linting,
 # errorprone-core-target runs ConcordanceTest against the version the check promises. They never
@@ -43,6 +46,7 @@ junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 license-report-gradle-plugin = { module = "com.github.jk1:gradle-license-report", version.ref = "license-report" }
+picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 
 [plugins]
