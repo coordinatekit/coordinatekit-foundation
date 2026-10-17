@@ -29,11 +29,9 @@ allprojects {
 // only makes sense for a module with sources.
 def codeProjects = subprojects.findAll { it.name != "conventions" }
 
-// Modules that publish a Gradle plugin. `java-gradle-plugin` is applied from here, ahead of the
-// `subprojects` block, because the publishing wiring below branches on whether a module has it: the
-// plugin creates its own `pluginMaven` publication from `components.java`, so a module carrying it
-// must not also get the `centralPortal` publication every other module gets, or the same jar would
-// ship twice under one coordinate.
+// Modules that publish a Gradle plugin. `java-gradle-plugin` creates their `pluginMaven` publication
+// from `components.java`, so they must not also get the `centralPortal` publication every other
+// module gets, or the same jar would ship twice under one coordinate.
 def pluginProjects = [
         project(":aggregate-javadoc-gradle"),
         project(":changelog-gradle"),
@@ -42,15 +40,189 @@ def pluginProjects = [
         project(":version-references-gradle")
 ]
 
-// Three plugin modules build on a plugin that publishes to the Gradle Plugin Portal and not to Maven
-// Central: concordance-gradle reaches net.ltgt.gradle:gradle-errorprone-plugin's ErrorProneOptions
-// type, changelog-gradle applies se.bjurr's git-changelog, and third-party-licenses-gradle applies
-// com.github.jk1:gradle-license-report. The portal is added to those three rather than to
-// allprojects so that nothing else resolves through its own mirror of Central. They differ in what a
-// consumer sees: concordance-gradle's dependency is compileOnly, so it stays out of the published
-// POM, while the other two are implementation, so they appear there and a consumer's build resolves
-// them from the portal too. The aggregate Javadoc plugin needs only the Gradle API and JSpecify, so
-// it stays off it.
+// Signing is required only when a deployment is actually going to Central. `./gradlew build`,
+// `publishToMavenLocal`, and snapshot uploads all run without a key. The answer is settled once the
+// task graph is, and held in a property: the configuration cache stores it with the graph, whereas
+// asking the graph again from a signing task at execution time is not allowed.
+def isPublishingToCentral = objects.property(Boolean).convention(false)
+gradle.taskGraph.whenReady { graph ->
+    isPublishingToCentral.set(graph.allTasks.any { it.name == "nmcpPublishAggregationToCentralPortal" })
+}
+
+subprojects {
+    apply plugin: "com.diffplug.spotless"
+    apply plugin: "java-library"
+    apply plugin: "maven-publish"
+    apply plugin: "signing"
+    apply plugin: "com.gradleup.nmcp"
+
+    java {
+        withJavadocJar()
+        withSourcesJar()
+    }
+
+    // The subproject's own build.gradle has not been evaluated yet when this block runs, so the
+    // description has to be read through a provider that resolves at POM-generation time.
+    def moduleDescription = provider { project.description }
+
+    publishing {
+        publications {
+            if (!pluginProjects.contains(project)) {
+                centralPortal(MavenPublication) {
+                    from components.java
+                }
+            }
+        }
+
+        // Applied to every publication rather than to `centralPortal` by name, so that a plugin
+        // module's `pluginMaven` publication and its marker both carry it. Central validates the
+        // marker POM by the same rules as any other.
+        publications.withType(MavenPublication).configureEach {
+            pom {
+                name = "CoordinateKit Foundation ${project.name}"
+                description = moduleDescription
+                url = findProperty("repoUrl")
+
+                licenses {
+                    license {
+                        name = "The Apache License, Version 2.0"
+                        url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = "andymarek"
+                        name = "Andy Marek"
+                        email = "andy@andymarek.com"
+                    }
+                }
+
+                scm {
+                    connection = "scm:git:git://github.com/coordinatekit/coordinatekit-foundation.git"
+                    developerConnection = "scm:git:ssh://github.com/coordinatekit/coordinatekit-foundation.git"
+                    url = findProperty("repoUrl")
+                }
+            }
+        }
+    }
+
+    // Central rejects a deployment whose POM is missing a required element, and the late-resolving
+    // description would surface as an empty one rather than a build failure. `check` fails here
+    // instead, for every generated POM, plugin markers included.
+    def modulePath = project.path
+    def pomTasks = tasks.withType(GenerateMavenPom)
+    def pomFiles = files({ pomTasks.collect { it.destination } }).builtBy(pomTasks)
+
+    tasks.register("validatePom") {
+        description = "Verify every generated POM carries the metadata Maven Central requires"
+        group = "verification"
+
+        inputs.files(pomFiles)
+
+        doLast {
+            pomFiles.each { pomFile ->
+                // Not namespace-aware: the POM declares a default xmlns, and matching bare local
+                // names keeps the lookups readable.
+                def pom = new XmlSlurper(false, false).parse(pomFile)
+                def missing = []
+                def require = { String element, String value -> if (!value?.trim()) missing << element }
+
+                require("groupId", pom.groupId.text())
+                require("artifactId", pom.artifactId.text())
+                require("version", pom.version.text())
+                require("name", pom.name.text())
+                require("description", pom.description.text())
+                require("url", pom.url.text())
+                require("licenses/license/name", pom.licenses.license.name.text())
+                require("licenses/license/url", pom.licenses.license.url.text())
+                require("developers/developer/name", pom.developers.developer.name.text())
+                require("scm/url", pom.scm.url.text())
+                require("scm/connection", pom.scm.connection.text())
+
+                if (missing) {
+                    throw new GradleException(
+                            "${modulePath} POM is missing metadata Maven Central requires: ${missing.join(', ')} " +
+                            "(see ${pomFile})")
+                }
+            }
+        }
+    }
+
+    tasks.named("check") {
+        dependsOn tasks.named("validatePom")
+    }
+
+    signing {
+        String signingKey = findProperty("signingKey")
+        String signingPassword = findProperty("signingPassword")
+        if (signingKey) {
+            useInMemoryPgpKeys(signingKey, signingPassword)
+        } else {
+            useGpgCmd()
+        }
+    }
+
+    // Every publication is signed, for the same reason every POM is validated. `configureEach` also
+    // covers publications registered later, such as the ones `java-gradle-plugin` creates in its own
+    // `afterEvaluate`, so nothing here depends on which callback runs first.
+    publishing.publications.configureEach {
+        signing.sign(it)
+    }
+
+    tasks.withType(Sign).configureEach {
+        onlyIf { isPublishingToCentral.get() }
+    }
+
+    spotless {
+        java {
+            eclipse("4.21").configFile(rootProject.file("conventions/src/main/resources/org/coordinatekit/foundation/conventions/eclipse_java_coordinatekit.xml"))
+            licenseHeaderFile rootProject.file("conventions/src/main/resources/org/coordinatekit/foundation/conventions/license_header.txt")
+            target "src/**/*.java"
+            trimTrailingWhitespace()
+            toggleOffOn()
+        }
+    }
+}
+
+configure(codeProjects) {
+    apply plugin: "jacoco"
+    apply plugin: "net.ltgt.errorprone"
+
+    dependencies {
+        errorprone rootProject.libs.errorprone.core
+
+        api rootProject.libs.jspecify
+
+        testImplementation(platform(rootProject.libs.junit.bom))
+        testImplementation(rootProject.libs.junit.jupiter)
+        testRuntimeOnly(rootProject.libs.junit.platform.launcher)
+    }
+
+    // Stamped on every module's jar rather than only on the one that reads it: it costs nothing,
+    // and `concordance-gradle` resolves its own version from here through
+    // `Package.getImplementationVersion()` so the plugin and the check it configures always come
+    // from the same release.
+    tasks.named("jar", Jar) {
+        manifest {
+            attributes("Implementation-Version": project.version)
+        }
+    }
+
+    test {
+        useJUnitPlatform()
+        finalizedBy jacocoTestReport
+    }
+
+    jacocoTestReport {
+        reports {
+            xml.required = true
+        }
+    }
+}
+
+// These three plugin modules build on a plugin that publishes only to the Gradle Plugin Portal. The
+// portal is added to them alone so that nothing else resolves through its own mirror of Central.
 configure([project(":changelog-gradle"), project(":concordance-gradle"), project(":third-party-licenses-gradle")]) {
     repositories {
         gradlePluginPortal()
@@ -81,9 +253,8 @@ configure(pluginProjects) {
         }
     }
 
-    // Read lazily: the jacoco plugin is applied further down, with the rest of codeProjects' wiring.
     dependencies {
-        testKitJacocoRuntime providers.provider { "org.jacoco:org.jacoco.agent:${jacoco.toolVersion}:runtime" }
+        testKitJacocoRuntime "org.jacoco:org.jacoco.agent:${jacoco.toolVersion}:runtime"
     }
 
     def fixtureExecutionData = layout.buildDirectory.file("jacoco/fixture.exec")
@@ -130,7 +301,7 @@ configure(pluginProjects) {
 
     // The root's aggregateJacocoReport does not read this module's reports. It resolves the coverage
     // variant the jacoco plugin publishes for the `test` suite, which carries only test.exec, so the
-    // fixture data joins that variant too. Matched by name because jacoco is applied further down.
+    // fixture data joins that variant too.
     configurations.matching { it.name == "coverageDataElementsForTest" }.configureEach {
         outgoing.artifact(fixtureExecutionData) {
             type = "binary"
@@ -183,230 +354,10 @@ configure(project(":version-references-gradle")) {
     }
 }
 
-// Signing is required only when a deployment is actually going to Central. `./gradlew build`,
-// `publishToMavenLocal`, and snapshot uploads all run without a key. The answer is settled once the
-// task graph is, and held in a property: the configuration cache stores it with the graph, whereas
-// asking the graph again from a signing task at execution time is not allowed.
-def isPublishingToCentral = objects.property(Boolean).convention(false)
-gradle.taskGraph.whenReady { graph ->
-    isPublishingToCentral.set(graph.allTasks.any { it.name == "nmcpPublishAggregationToCentralPortal" })
-}
-
-// One deployment, not one per module: nmcp collects every module's publication into a single
-// bundle and uploads it once, so Central validates and publishes every module as a unit. A module
-// added to settings.gradle has to be listed here too or it silently ships nothing.
-nmcpAggregation {
-    centralPortal {
-        username = findProperty("centralPortalUsername")
-        password = findProperty("centralPortalPassword")
-        publishingType = "AUTOMATIC"
-    }
-}
-
-dependencies {
-    nmcpAggregation project(":aggregate-javadoc-gradle")
-    nmcpAggregation project(":changelog-gradle")
-    nmcpAggregation project(":cli-brand")
-    nmcpAggregation project(":concordance")
-    nmcpAggregation project(":concordance-errorprone")
-    nmcpAggregation project(":concordance-gradle")
-    nmcpAggregation project(":conventions")
-    nmcpAggregation project(":third-party-licenses-gradle")
-    nmcpAggregation project(":version-references-gradle")
-}
-
-subprojects {
-    apply plugin: "com.diffplug.spotless"
-    apply plugin: "java-library"
-    apply plugin: "maven-publish"
-    apply plugin: "signing"
-    apply plugin: "com.gradleup.nmcp"
-
-    java {
-        withJavadocJar()
-        withSourcesJar()
-    }
-
-    // The subproject's own build.gradle has not been evaluated yet when this block runs, so the
-    // description has to be read through a provider that resolves at POM-generation time.
-    def moduleDescription = provider { project.description }
-
-    publishing {
-        publications {
-            // A plugin module already has a publication of `components.java`, created for it by
-            // `java-gradle-plugin`, so registering a second one here would publish its jar twice.
-            if (!pluginProjects.contains(project)) {
-                centralPortal(MavenPublication) {
-                    from components.java
-                }
-            }
-        }
-
-        // Applied to every publication rather than to `centralPortal` by name, so that a plugin
-        // module's `pluginMaven` publication and its marker both carry it. Central validates the
-        // marker POM by the same rules as any other.
-        publications.withType(MavenPublication).configureEach {
-            pom {
-                name = "CoordinateKit Foundation ${project.name}"
-                description = moduleDescription
-                url = findProperty("repoUrl")
-
-                licenses {
-                    license {
-                        name = "The Apache License, Version 2.0"
-                        url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
-                    }
-                }
-
-                developers {
-                    developer {
-                        id = "andymarek"
-                        name = "Andy Marek"
-                        email = "andy@andymarek.com"
-                    }
-                }
-
-                scm {
-                    connection = "scm:git:git://github.com/coordinatekit/coordinatekit-foundation.git"
-                    developerConnection = "scm:git:ssh://github.com/coordinatekit/coordinatekit-foundation.git"
-                    url = findProperty("repoUrl")
-                }
-            }
-        }
-    }
-
-    // Central rejects a deployment whose POM is missing name, description, url, a license, a
-    // developer, or scm. The description in particular reaches the POM through a provider that
-    // resolves late, so a wiring mistake surfaces as an empty element rather than a build failure.
-    // `check` fails here instead, naming the element, long before the Portal sees it.
-    //
-    // Every generated POM is checked, not one named publication: a plugin module publishes its jar
-    // and a marker, and a marker whose POM is short a required element fails the whole deployment.
-    def modulePath = project.path
-    def pomTasks = tasks.withType(GenerateMavenPom)
-    def pomFiles = files({ pomTasks.collect { it.destination } }).builtBy(pomTasks)
-
-    tasks.register("validatePom") {
-        description = "Verify every generated POM carries the metadata Maven Central requires"
-        group = "verification"
-
-        inputs.files(pomFiles)
-
-        doLast {
-            pomFiles.each { pomFile ->
-                // Not namespace-aware: the POM declares a default xmlns, and matching bare local
-                // names keeps the lookups readable.
-                def pom = new XmlSlurper(false, false).parse(pomFile)
-                def missing = []
-                def require = { String element, String value -> if (!value?.trim()) missing << element }
-
-                require("groupId", pom.groupId.text())
-                require("artifactId", pom.artifactId.text())
-                require("version", pom.version.text())
-                require("name", pom.name.text())
-                require("description", pom.description.text())
-                require("url", pom.url.text())
-                require("licenses/license/name", pom.licenses.license.name.text())
-                require("licenses/license/url", pom.licenses.license.url.text())
-                require("developers/developer/name", pom.developers.developer.name.text())
-                require("scm/url", pom.scm.url.text())
-                require("scm/connection", pom.scm.connection.text())
-
-                if (missing) {
-                    throw new GradleException(
-                            "${modulePath} POM is missing metadata Maven Central requires: ${missing.join(', ')} " +
-                            "(see ${pomFile})")
-                }
-            }
-        }
-    }
-
-    tasks.named("check") {
-        dependsOn tasks.named("validatePom")
-    }
-
-    signing {
-        String signingKey = findProperty("signingKey")
-        String signingPassword = findProperty("signingPassword")
-        if (signingKey) {
-            useInMemoryPgpKeys(signingKey, signingPassword)
-        } else {
-            useGpgCmd()
-        }
-        required = { isPublishingToCentral.get() }
-    }
-
-    // Every publication is signed, for the same reason every POM is validated. `configureEach` also
-    // covers publications registered later, such as the ones `java-gradle-plugin` creates in its own
-    // `afterEvaluate`, so nothing here depends on which callback runs first.
-    publishing.publications.configureEach {
-        signing.sign(it)
-    }
-
-    tasks.withType(Sign).configureEach {
-        onlyIf { isPublishingToCentral.get() }
-    }
-
-    spotless {
-        java {
-            eclipse("4.21").configFile(rootProject.file("conventions/src/main/resources/org/coordinatekit/foundation/conventions/eclipse_java_coordinatekit.xml"))
-            licenseHeaderFile rootProject.file("conventions/src/main/resources/org/coordinatekit/foundation/conventions/license_header.txt")
-            target "src/**/*.java"
-            trimTrailingWhitespace()
-            toggleOffOn()
-        }
-    }
-}
-
-configure(codeProjects) {
-    apply plugin: "jacoco"
-    apply plugin: "net.ltgt.errorprone"
-
-    dependencies {
-        errorprone rootProject.libs.errorprone.core
-
-        api rootProject.libs.jspecify
-
-        testImplementation(platform(rootProject.libs.junit.bom))
-        testImplementation(rootProject.libs.junit.jupiter)
-        testRuntimeOnly(rootProject.libs.junit.platform.launcher)
-    }
-
-    // Error Prone 2.48 refuses to run on JDK 21 without this javac option, and net.ltgt.errorprone
-    // 4.1.0 does not pass it automatically.
-    tasks.withType(JavaCompile).configureEach {
-        options.compilerArgs += "-XDaddTypeAnnotationsToSymbol=true"
-    }
-
-    // Stamped on every module's jar rather than only on the one that reads it: it costs nothing,
-    // and `concordance-gradle` resolves its own version from here through
-    // `Package.getImplementationVersion()` so the plugin and the check it configures always come
-    // from the same release.
-    tasks.named("jar", Jar) {
-        manifest {
-            attributes("Implementation-Version": project.version)
-        }
-    }
-
-    test {
-        useJUnitPlatform()
-        finalizedBy jacocoTestReport
-    }
-
-    jacocoTestReport {
-        dependsOn test
-        reports {
-            xml.required = true
-            html.required = true
-        }
-    }
-}
-
 // `conventions` publishes two resources and no classes, so javadoc exits with "No public or
 // protected classes found to document" and would fail `build`. Its javadoc jar is empty by
 // necessity; Central only requires that one exist. Every other module keeps javadoc's error
-// reporting, and aggregateJavadoc layers -Werror on top — though it draws from codeProjects, so
-// it never sees this module.
+// reporting.
 project(":conventions") {
     javadoc {
         failOnError = false
@@ -478,6 +429,22 @@ project(":concordance-errorprone") {
     }
 }
 
+// One deployment, not one per module: nmcp collects every module's publication into a single
+// bundle and uploads it once, so Central validates and publishes every module as a unit.
+nmcpAggregation {
+    centralPortal {
+        username = findProperty("centralPortalUsername")
+        password = findProperty("centralPortalPassword")
+        publishingType = "AUTOMATIC"
+    }
+}
+
+dependencies {
+    subprojects.each {
+        nmcpAggregation project(it.path)
+    }
+}
+
 apply plugin: AggregateJavadocPlugin
 apply plugin: VersionReferencesPlugin
 
@@ -509,6 +476,10 @@ aggregateJavadoc {
     wordForms = ["api": "API", "cli": "CLI", "errorprone": "Error Prone"]
 }
 
+tasks.named("aggregateJavadoc", Javadoc) {
+    options.addMultilineStringsOption("-add-exports").value = javacExports
+}
+
 // The plugin's own test fixtures carry version literals that are test data, not references to this
 // project's version.
 foundationVersionReferences {
@@ -536,10 +507,4 @@ release {
 // gradle-release makes carries them along with gradle.properties and CHANGELOG.md.
 tasks.named("beforeReleaseBuild") {
     dependsOn tasks.named("rewriteVersionReferences")
-}
-
-// concordance-errorprone's sources name javac's own AST and symbol types, which the jdk.compiler
-// module does not export.
-tasks.named("aggregateJavadoc", Javadoc) {
-    options.addMultilineStringsOption("-add-exports").value = javacExports
 }
