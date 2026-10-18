@@ -1,5 +1,6 @@
 [versions]
 # api — update conservatively (security/bugs only)
+archunit = "1.5.1"
 jspecify = "1.0.0"
 
 # provided — compileOnly, supplied by the consumer's build at run time. The published check and
@@ -27,6 +28,7 @@ nmcp = "1.6.2"
 spotless = "8.10.3"
 
 [libraries]
+archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
 errorprone-check-api = { module = "com.google.errorprone:error_prone_check_api", version.ref = "errorprone-target" }
 # error_prone_core appears twice on purpose: errorprone-core runs this repository's own linting,
 # errorprone-core-target runs ConcordanceTest against the version the check promises. They never

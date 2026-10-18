@@ -2,8 +2,9 @@
 
 ## Repository
 
-coordinatekit-foundation is the base layer CoordinateKit's other repositories build on. Anything more than one repository needs is implemented here once and consumed as a published library, never copied. Nine modules live here, all under the group `org.coordinatekit.foundation`:
+coordinatekit-foundation is the base layer CoordinateKit's other repositories build on. Anything more than one repository needs is implemented here once and consumed as a published library, never copied. Ten modules live here, all under the group `org.coordinatekit.foundation`:
 
+- `architecture` publishes `FoundationArchitecture`, the ArchUnit rules a module runs from one `ArchitectureTest`.
 - `cli-brand` publishes `Banner`, which renders the brand art.
 - `conventions` publishes the Eclipse formatter profile and the license header, as two files and no code.
 - `changelog-gradle` is the plugin that configures git-changelog with CoordinateKit's template.
