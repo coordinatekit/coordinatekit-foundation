@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
+import org.coordinatekit.foundation.architecture.fixtures.PrintingRecord;
 import org.coordinatekit.foundation.architecture.fixtures.PublicRecord;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -58,9 +59,9 @@ class FoundationArchitectureTest {
     ) {}
 
     private static final String ADDED_RULE_DESCRIPTION = "Production classes should be named Zzz";
-    private static final String PUBLIC_RECORDS = "Records should not be public";
-    private static final String SYSTEM_STREAMS = "Classes should not use System.out or System.err";
-    private static final String TEST_CLASS_VISIBILITY = "Classes with names matching .*Test should be package-private";
+    private static final String PUBLIC_RECORDS = JavaRules.publicRecords().getDescription();
+    private static final String SYSTEM_STREAMS = JavaRules.systemStreams().getDescription();
+    private static final String TEST_CLASS_VISIBILITY = JUnitRules.testClassVisibility().getDescription();
 
     @Test
     void addCheck__failureJoinsReport() {
@@ -75,6 +76,20 @@ class FoundationArchitectureTest {
         // ASSERT //
         assertTrue(message.startsWith("Found 1 architecture violations for 1 rules"), message);
         assertTrue(message.contains("Rule: no stray files\n\tfound stray.txt"), message);
+    }
+
+    @Test
+    void addCheck__messagelessErrorNamesItsClass() {
+        // ARRANGE //
+        FoundationArchitecture architecture = newBuilder().addCheck("no stray files", () -> {
+            throw new AssertionError();
+        }).build();
+
+        // ACT //
+        String message = failure(architecture, Fixtures.of(), Fixtures.of());
+
+        // ASSERT //
+        assertTrue(message.contains("Rule: no stray files\n\t" + AssertionError.class.getName()), message);
     }
 
     @Test
@@ -330,6 +345,19 @@ class FoundationArchitectureTest {
         assertTrue(insiderMessage.contains(PUBLIC_RECORDS), insiderMessage);
     }
 
+    @Test
+    void check__subpackageAnchorKeepsTheFixtures() {
+        // ARRANGE //
+        FoundationArchitecture architecture = FoundationArchitecture.builder(PublicRecord.class).build();
+
+        // ACT //
+        String message = failure(architecture, Fixtures.of("PublicRecord"), Fixtures.of());
+
+        // ASSERT //
+        assertTrue(message.contains("Rule: " + PUBLIC_RECORDS), message);
+        assertTrue(message.contains(Fixtures.fullName("PublicRecord")), message);
+    }
+
     static Stream<BlankReasonParameters> disable__blankReason() {
         return Stream.of(
                 new BlankReasonParameters("null", null),
@@ -413,16 +441,15 @@ class FoundationArchitectureTest {
     @Test
     void exclude__byClassRemovesViolationForThatRuleOnly() {
         // ARRANGE //
-        FoundationArchitecture architecture = newBuilder().exclude(Rule.PUBLIC_RECORDS, PublicRecord.class).build();
-        JavaClasses production = Fixtures.of("PublicRecord", "PrintingRecord");
+        FoundationArchitecture architecture = newBuilder().exclude(Rule.PUBLIC_RECORDS, PrintingRecord.class).build();
 
         // ACT //
-        String message = failure(architecture, production, Fixtures.of());
+        String message = failure(architecture, Fixtures.of("PrintingRecord"), Fixtures.of());
 
         // ASSERT //
-        assertTrue(message.contains("Rule: " + PUBLIC_RECORDS), message);
-        assertFalse(message.contains(Fixtures.fullName("PublicRecord") + ">"), message);
-        assertTrue(message.contains(Fixtures.fullName("PrintingRecord") + ">"), message);
+        assertFalse(message.contains("Rule: " + PUBLIC_RECORDS), message);
+        assertTrue(message.contains("Rule: " + SYSTEM_STREAMS), message);
+        assertTrue(message.contains(Fixtures.fullName("PrintingRecord")), message);
     }
 
     @Test
