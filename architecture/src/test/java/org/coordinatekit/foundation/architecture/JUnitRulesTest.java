@@ -16,7 +16,6 @@
 package org.coordinatekit.foundation.architecture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -44,6 +43,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /**
@@ -51,7 +51,22 @@ import java.util.stream.Stream;
  * rule, and asserts which fixtures its violations name.
  */
 class JUnitRulesTest {
+    record FactoryParameters(String name, Supplier<List<ArchRule>> rules, List<String> descriptions) {}
+
     record RuleParameters(String name, List<Class<?>> fixtures, List<Class<?>> violators) {}
+
+    @MethodSource("factories")
+    @ParameterizedTest
+    void descriptions(FactoryParameters parameters) {
+        // ARRANGE //
+        List<ArchRule> rules = parameters.rules().get();
+
+        // ACT //
+        List<String> descriptions = rules.stream().map(ArchRule::getDescription).toList();
+
+        // ASSERT //
+        assertEquals(parameters.descriptions(), descriptions, parameters.name());
+    }
 
     static Stream<RuleParameters> disabledTests() {
         return Stream.of(
@@ -99,33 +114,41 @@ class JUnitRulesTest {
         );
     }
 
-    @Test
-    void disabledTests__emptyClassesPass() {
+    @MethodSource("factories")
+    @ParameterizedTest
+    void emptyClassesPass(FactoryParameters parameters) {
         // ARRANGE //
         JavaClasses none = Fixtures.of();
 
         // ACT //
-        List<EvaluationResult> results = JUnitRules.disabledTests().stream().map(rule -> rule.evaluate(none)).toList();
+        List<EvaluationResult> results = parameters.rules().get().stream().map(rule -> rule.evaluate(none)).toList();
 
         // ASSERT //
-        assertTrue(results.stream().noneMatch(EvaluationResult::hasViolation));
+        assertTrue(results.stream().noneMatch(EvaluationResult::hasViolation), parameters.name());
     }
 
-    @Test
-    void disabledTests__hasDescriptions() {
-        // ARRANGE //
-        List<ArchRule> rules = JUnitRules.disabledTests();
-
-        // ACT //
-        List<String> descriptions = rules.stream().map(ArchRule::getDescription).toList();
-
-        // ASSERT //
-        assertEquals(
-                List.of(
-                        "Classes should not be annotated with org.junit.jupiter.api.Disabled",
-                        "Methods should not be annotated with org.junit.jupiter.api.Disabled"
+    static Stream<FactoryParameters> factories() {
+        return Stream.of(
+                new FactoryParameters(
+                        "disabledTests",
+                        JUnitRules::disabledTests,
+                        List.of(
+                                "Classes should not be annotated with org.junit.jupiter.api.Disabled",
+                                "Methods should not be annotated with org.junit.jupiter.api.Disabled"
+                        )
                 ),
-                descriptions
+                new FactoryParameters(
+                        "testClassVisibility",
+                        () -> List.of(JUnitRules.testClassVisibility()),
+                        List.of("Classes with names matching .*Test should be package-private")
+                ),
+                new FactoryParameters(
+                        "testMethodVisibility",
+                        () -> List.of(JUnitRules.testMethodVisibility()),
+                        List.of(
+                                "Methods annotated with org.junit.jupiter.api.Test or org.junit.jupiter.params.ParameterizedTest should be package-private"
+                        )
+                )
         );
     }
 
@@ -187,30 +210,6 @@ class JUnitRulesTest {
         );
     }
 
-    @Test
-    void testClassVisibility__emptyClassesPass() {
-        // ARRANGE //
-        JavaClasses none = Fixtures.of();
-
-        // ACT //
-        EvaluationResult result = JUnitRules.testClassVisibility().evaluate(none);
-
-        // ASSERT //
-        assertFalse(result.hasViolation());
-    }
-
-    @Test
-    void testClassVisibility__hasDescription() {
-        // ARRANGE //
-        ArchRule rule = JUnitRules.testClassVisibility();
-
-        // ACT //
-        String description = rule.getDescription();
-
-        // ASSERT //
-        assertEquals("Classes with names matching .*Test should be package-private", description);
-    }
-
     static Stream<RuleParameters> testMethodVisibility() {
         return Stream.of(
                 new RuleParameters(
@@ -257,33 +256,4 @@ class JUnitRulesTest {
         );
     }
 
-    @Test
-    void testMethodVisibility__emptyClassesPass() {
-        // ARRANGE //
-        JavaClasses none = Fixtures.of();
-
-        // ACT //
-        List<EvaluationResult> results = List.of(JUnitRules.testMethodVisibility())
-                .stream()
-                .map(rule -> rule.evaluate(none))
-                .toList();
-
-        // ASSERT //
-        assertTrue(results.stream().noneMatch(EvaluationResult::hasViolation));
-    }
-
-    @Test
-    void testMethodVisibility__hasDescription() {
-        // ARRANGE //
-        ArchRule rule = JUnitRules.testMethodVisibility();
-
-        // ACT //
-        String description = rule.getDescription();
-
-        // ASSERT //
-        assertEquals(
-                "Methods annotated with org.junit.jupiter.api.Test or org.junit.jupiter.params.ParameterizedTest should be package-private",
-                description
-        );
-    }
 }

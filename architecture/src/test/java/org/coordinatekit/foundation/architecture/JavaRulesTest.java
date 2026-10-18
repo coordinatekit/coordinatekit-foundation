@@ -16,7 +16,6 @@
 package org.coordinatekit.foundation.architecture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -49,6 +48,10 @@ import org.coordinatekit.foundation.architecture.fixtures.IWidget;
 import org.coordinatekit.foundation.architecture.fixtures.ImplHolder;
 import org.coordinatekit.foundation.architecture.fixtures.Item;
 import org.coordinatekit.foundation.architecture.fixtures.JavaUtilLoggingUser;
+import org.coordinatekit.foundation.architecture.fixtures.JdkDeprecatedConstructorCaller;
+import org.coordinatekit.foundation.architecture.fixtures.JdkDeprecatedMethodCaller;
+import org.coordinatekit.foundation.architecture.fixtures.JdkDeprecatedReturnTypeCaller;
+import org.coordinatekit.foundation.architecture.fixtures.JdkDeprecatedTypeUser;
 import org.coordinatekit.foundation.architecture.fixtures.LambdaPrinter;
 import org.coordinatekit.foundation.architecture.fixtures.LeadingUnderscoreConstant;
 import org.coordinatekit.foundation.architecture.fixtures.LowerCaseConstant;
@@ -80,8 +83,10 @@ import org.coordinatekit.foundation.architecture.fixtures.SystemOutPrinter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.xml.sax.Parser;
 
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /**
@@ -90,6 +95,8 @@ import java.util.stream.Stream;
  * not break a test here.
  */
 class JavaRulesTest {
+    record FactoryParameters(String name, Supplier<List<ArchRule>> rules, List<String> descriptions) {}
+
     record RuleParameters(String name, List<Class<?>> fixtures, List<Class<?>> violators) {}
 
     static Stream<RuleParameters> constantNaming() {
@@ -143,33 +150,6 @@ class JavaRulesTest {
         );
     }
 
-    @Test
-    void constantNaming__emptyClassesPass() {
-        // ARRANGE //
-        JavaClasses none = Fixtures.of();
-
-        // ACT //
-        List<EvaluationResult> results = List.of(JavaRules.constantNaming())
-                .stream()
-                .map(rule -> rule.evaluate(none))
-                .toList();
-
-        // ASSERT //
-        assertTrue(results.stream().noneMatch(EvaluationResult::hasViolation));
-    }
-
-    @Test
-    void constantNaming__hasDescription() {
-        // ARRANGE //
-        ArchRule rule = JavaRules.constantNaming();
-
-        // ACT //
-        String description = rule.getDescription();
-
-        // ASSERT //
-        assertEquals("Constants should follow constant naming conventions", description);
-    }
-
     @SuppressWarnings("deprecation")
     static Stream<RuleParameters> deprecatedApi() {
         return Stream.of(
@@ -213,6 +193,31 @@ class JavaRulesTest {
                         List.of(DeprecatedSelfCaller.class),
                         List.of(DeprecatedSelfCaller.class)
                 ),
+                new RuleParameters(
+                        "calling a deprecated JDK method violates",
+                        List.of(JdkDeprecatedMethodCaller.class),
+                        List.of(JdkDeprecatedMethodCaller.class)
+                ),
+                new RuleParameters(
+                        "calling a deprecated JDK constructor violates",
+                        List.of(JdkDeprecatedConstructorCaller.class),
+                        List.of(JdkDeprecatedConstructorCaller.class)
+                ),
+                new RuleParameters(
+                        "depending on a deprecated JDK class violates",
+                        List.of(JdkDeprecatedTypeUser.class),
+                        List.of(JdkDeprecatedTypeUser.class)
+                ),
+                new RuleParameters(
+                        "a deprecated JDK type in a call's signature violates once imported, and so does the type",
+                        List.of(JdkDeprecatedReturnTypeCaller.class, Parser.class),
+                        List.of(JdkDeprecatedReturnTypeCaller.class, Parser.class)
+                ),
+                new RuleParameters(
+                        "a deprecated JDK type only in a call's signature passes",
+                        List.of(JdkDeprecatedReturnTypeCaller.class),
+                        List.of()
+                ),
                 new RuleParameters("calling a current member passes", List.of(CurrentApiCaller.class), List.of()),
                 new RuleParameters("a meta-deprecated type passes", List.of(MetaDeprecatedTypeUser.class), List.of()),
                 new RuleParameters(
@@ -239,31 +244,94 @@ class JavaRulesTest {
         );
     }
 
-    @Test
-    void deprecatedApi__emptyClassesPass() {
+    @MethodSource("factories")
+    @ParameterizedTest
+    void descriptions(FactoryParameters parameters) {
+        // ARRANGE //
+        List<ArchRule> rules = parameters.rules().get();
+
+        // ACT //
+        List<String> descriptions = rules.stream().map(ArchRule::getDescription).toList();
+
+        // ASSERT //
+        assertEquals(parameters.descriptions(), descriptions, parameters.name());
+    }
+
+    @MethodSource("factories")
+    @ParameterizedTest
+    void emptyClassesPass(FactoryParameters parameters) {
         // ARRANGE //
         JavaClasses none = Fixtures.of();
 
         // ACT //
-        List<EvaluationResult> results = List.of(JavaRules.deprecatedApi())
-                .stream()
-                .map(rule -> rule.evaluate(none))
-                .toList();
+        List<EvaluationResult> results = parameters.rules().get().stream().map(rule -> rule.evaluate(none)).toList();
 
         // ASSERT //
-        assertTrue(results.stream().noneMatch(EvaluationResult::hasViolation));
+        assertTrue(results.stream().noneMatch(EvaluationResult::hasViolation), parameters.name());
     }
 
-    @Test
-    void deprecatedApi__hasDescription() {
-        // ARRANGE //
-        ArchRule rule = JavaRules.deprecatedApi();
-
-        // ACT //
-        String description = rule.getDescription();
-
-        // ASSERT //
-        assertEquals("Classes should not use deprecated APIs", description);
+    static Stream<FactoryParameters> factories() {
+        return Stream.of(
+                new FactoryParameters(
+                        "constantNaming",
+                        () -> List.of(JavaRules.constantNaming()),
+                        List.of("Constants should follow constant naming conventions")
+                ),
+                new FactoryParameters(
+                        "deprecatedApi",
+                        () -> List.of(JavaRules.deprecatedApi()),
+                        List.of("Classes should not use deprecated APIs")
+                ),
+                new FactoryParameters(
+                        "finalClassProtectedMembers",
+                        () -> List.of(JavaRules.finalClassProtectedMembers()),
+                        List.of("Final classes should not have protected members")
+                ),
+                new FactoryParameters(
+                        "forbiddenImports",
+                        JavaRules::forbiddenImports,
+                        List.of(
+                                "No classes should import classes in package java.util.logging..",
+                                "No classes should import classes in package sun..",
+                                "No classes should import classes in package com.sun..",
+                                "No classes should import classes in package java.awt..",
+                                "No classes should import classes in package javax.swing..",
+                                "No classes should import classes in package org.apache.commons.logging..",
+                                "No classes should import classes in package org.apache.log4j..",
+                                "No classes should import classes in package org.apache.logging.log4j.."
+                        )
+                ),
+                new FactoryParameters(
+                        "implSuffix",
+                        () -> List.of(JavaRules.implSuffix()),
+                        List.of("Classes should not have names matching .*Impl")
+                ),
+                new FactoryParameters(
+                        "interfacePrefix",
+                        () -> List.of(JavaRules.interfacePrefix()),
+                        List.of("Interfaces should not be prefixed with I")
+                ),
+                new FactoryParameters(
+                        "publicFields",
+                        () -> List.of(JavaRules.publicFields()),
+                        List.of("Fields should not be public unless they are static")
+                ),
+                new FactoryParameters(
+                        "publicRecords",
+                        () -> List.of(JavaRules.publicRecords()),
+                        List.of("Records should not be public")
+                ),
+                new FactoryParameters(
+                        "systemStreams",
+                        () -> List.of(JavaRules.systemStreams()),
+                        List.of("Classes should not use System.out or System.err")
+                ),
+                new FactoryParameters(
+                        "utilityClasses",
+                        () -> List.of(JavaRules.utilityClasses()),
+                        List.of("Utility classes should be final and have a private constructor")
+                )
+        );
     }
 
     static Stream<RuleParameters> finalClassProtectedMembers() {
@@ -323,33 +391,6 @@ class JavaRulesTest {
         );
     }
 
-    @Test
-    void finalClassProtectedMembers__emptyClassesPass() {
-        // ARRANGE //
-        JavaClasses none = Fixtures.of();
-
-        // ACT //
-        List<EvaluationResult> results = List.of(JavaRules.finalClassProtectedMembers())
-                .stream()
-                .map(rule -> rule.evaluate(none))
-                .toList();
-
-        // ASSERT //
-        assertTrue(results.stream().noneMatch(EvaluationResult::hasViolation));
-    }
-
-    @Test
-    void finalClassProtectedMembers__hasDescription() {
-        // ARRANGE //
-        ArchRule rule = JavaRules.finalClassProtectedMembers();
-
-        // ACT //
-        String description = rule.getDescription();
-
-        // ASSERT //
-        assertEquals("Final classes should not have protected members", description);
-    }
-
     static Stream<RuleParameters> forbiddenImports() {
         return Stream.of(
                 new RuleParameters(
@@ -384,45 +425,6 @@ class JavaRulesTest {
                 parameters.name(),
                 parameters.fixtures(),
                 parameters.violators()
-        );
-    }
-
-    @Test
-    void forbiddenImports__emptyClassesPass() {
-        // ARRANGE //
-        JavaClasses none = Fixtures.of();
-
-        // ACT //
-        List<EvaluationResult> results = JavaRules.forbiddenImports()
-                .stream()
-                .map(rule -> rule.evaluate(none))
-                .toList();
-
-        // ASSERT //
-        assertTrue(results.stream().noneMatch(EvaluationResult::hasViolation));
-    }
-
-    @Test
-    void forbiddenImports__hasDescriptions() {
-        // ARRANGE //
-        List<ArchRule> rules = JavaRules.forbiddenImports();
-
-        // ACT //
-        List<String> descriptions = rules.stream().map(ArchRule::getDescription).toList();
-
-        // ASSERT //
-        assertEquals(
-                List.of(
-                        "No classes should import classes in package java.util.logging..",
-                        "No classes should import classes in package sun..",
-                        "No classes should import classes in package com.sun..",
-                        "No classes should import classes in package java.awt..",
-                        "No classes should import classes in package javax.swing..",
-                        "No classes should import classes in package org.apache.commons.logging..",
-                        "No classes should import classes in package org.apache.log4j..",
-                        "No classes should import classes in package org.apache.logging.log4j.."
-                ),
-                descriptions
         );
     }
 
@@ -464,33 +466,6 @@ class JavaRulesTest {
         );
     }
 
-    @Test
-    void implSuffix__emptyClassesPass() {
-        // ARRANGE //
-        JavaClasses none = Fixtures.of();
-
-        // ACT //
-        List<EvaluationResult> results = List.of(JavaRules.implSuffix())
-                .stream()
-                .map(rule -> rule.evaluate(none))
-                .toList();
-
-        // ASSERT //
-        assertTrue(results.stream().noneMatch(EvaluationResult::hasViolation));
-    }
-
-    @Test
-    void implSuffix__hasDescription() {
-        // ARRANGE //
-        ArchRule rule = JavaRules.implSuffix();
-
-        // ACT //
-        String description = rule.getDescription();
-
-        // ASSERT //
-        assertEquals("Classes should not have names matching .*Impl", description);
-    }
-
     static Stream<RuleParameters> interfacePrefix() {
         return Stream.of(
                 new RuleParameters("prefixed interface violates", List.of(IService.class), List.of(IService.class)),
@@ -526,33 +501,6 @@ class JavaRulesTest {
         );
     }
 
-    @Test
-    void interfacePrefix__emptyClassesPass() {
-        // ARRANGE //
-        JavaClasses none = Fixtures.of();
-
-        // ACT //
-        List<EvaluationResult> results = List.of(JavaRules.interfacePrefix())
-                .stream()
-                .map(rule -> rule.evaluate(none))
-                .toList();
-
-        // ASSERT //
-        assertTrue(results.stream().noneMatch(EvaluationResult::hasViolation));
-    }
-
-    @Test
-    void interfacePrefix__hasDescription() {
-        // ARRANGE //
-        ArchRule rule = JavaRules.interfacePrefix();
-
-        // ACT //
-        String description = rule.getDescription();
-
-        // ASSERT //
-        assertEquals("Interfaces should not be prefixed with I", description);
-    }
-
     static Stream<RuleParameters> publicFields() {
         return Stream.of(
                 new RuleParameters(
@@ -581,33 +529,6 @@ class JavaRulesTest {
                 parameters.fixtures(),
                 parameters.violators()
         );
-    }
-
-    @Test
-    void publicFields__emptyClassesPass() {
-        // ARRANGE //
-        JavaClasses none = Fixtures.of();
-
-        // ACT //
-        List<EvaluationResult> results = List.of(JavaRules.publicFields())
-                .stream()
-                .map(rule -> rule.evaluate(none))
-                .toList();
-
-        // ASSERT //
-        assertTrue(results.stream().noneMatch(EvaluationResult::hasViolation));
-    }
-
-    @Test
-    void publicFields__hasDescription() {
-        // ARRANGE //
-        ArchRule rule = JavaRules.publicFields();
-
-        // ACT //
-        String description = rule.getDescription();
-
-        // ASSERT //
-        assertEquals("Fields should not be public unless they are static", description);
     }
 
     static Stream<RuleParameters> publicRecords() {
@@ -641,30 +562,6 @@ class JavaRulesTest {
                 parameters.fixtures(),
                 parameters.violators()
         );
-    }
-
-    @Test
-    void publicRecords__emptyClassesPass() {
-        // ARRANGE //
-        JavaClasses none = Fixtures.of();
-
-        // ACT //
-        EvaluationResult result = JavaRules.publicRecords().evaluate(none);
-
-        // ASSERT //
-        assertFalse(result.hasViolation());
-    }
-
-    @Test
-    void publicRecords__hasDescription() {
-        // ARRANGE //
-        ArchRule rule = JavaRules.publicRecords();
-
-        // ACT //
-        String description = rule.getDescription();
-
-        // ASSERT //
-        assertEquals("Records should not be public", description);
     }
 
     static Stream<RuleParameters> systemStreams() {
@@ -740,18 +637,6 @@ class JavaRulesTest {
         assertTrue(details.contains("SystemOutPrinter.java:"), details);
     }
 
-    @Test
-    void systemStreams__hasDescription() {
-        // ARRANGE //
-        ArchRule rule = JavaRules.systemStreams();
-
-        // ACT //
-        String description = rule.getDescription();
-
-        // ASSERT //
-        assertEquals("Classes should not use System.out or System.err", description);
-    }
-
     static Stream<RuleParameters> utilityClasses() {
         return Stream.of(
                 new RuleParameters(
@@ -819,30 +704,4 @@ class JavaRulesTest {
         );
     }
 
-    @Test
-    void utilityClasses__emptyClassesPass() {
-        // ARRANGE //
-        JavaClasses none = Fixtures.of();
-
-        // ACT //
-        List<EvaluationResult> results = List.of(JavaRules.utilityClasses())
-                .stream()
-                .map(rule -> rule.evaluate(none))
-                .toList();
-
-        // ASSERT //
-        assertTrue(results.stream().noneMatch(EvaluationResult::hasViolation));
-    }
-
-    @Test
-    void utilityClasses__hasDescription() {
-        // ARRANGE //
-        ArchRule rule = JavaRules.utilityClasses();
-
-        // ACT //
-        String description = rule.getDescription();
-
-        // ASSERT //
-        assertEquals("Utility classes should be final and have a private constructor", description);
-    }
 }
