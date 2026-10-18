@@ -6,7 +6,7 @@ It includes `architecture`, the ArchUnit rules CoordinateKit's Java modules foll
 
 ## Architecture
 
-`FoundationArchitecture` runs CoordinateKit's ArchUnit rules over one module's classes and fails with a single report listing every violation. The rules are public records, no direct use of `System.out` or `System.err`, and package-private JUnit test classes. Add the module as a test dependency, which brings ArchUnit with it.
+`FoundationArchitecture` runs CoordinateKit's ArchUnit rules over one module's classes and fails with a single report listing every violation. Thirteen rules are on by default. They cover constant naming, deprecated and forbidden APIs, protected members of final classes, the `Impl` suffix and the `I` interface prefix, public fields and records, `System.out` and `System.err`, utility classes, and the visibility and disabling of tests. The `Rule` enum lists every rule with what it checks. Add the module as a test dependency, which brings ArchUnit with it.
 
 ```groovy
 dependencies {

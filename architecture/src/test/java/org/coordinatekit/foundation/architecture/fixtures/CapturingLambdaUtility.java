@@ -18,8 +18,8 @@ package org.coordinatekit.foundation.architecture.fixtures;
 import java.util.function.Supplier;
 
 /**
- * A class whose lambda captures {@code this}, so it has an instance method: not selected by
- * {@code UTILITY_CLASSES}.
+ * A class whose lambda captures {@code this}. ArchUnit does not report the lambda's method, so
+ * {@code UTILITY_CLASSES} still selects the class and it fails the rule.
  */
 public class CapturingLambdaUtility {
     @SuppressWarnings("unused")

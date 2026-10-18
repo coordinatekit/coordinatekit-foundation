@@ -332,9 +332,9 @@ final class JavaRules {
      *
      * <p>
      * A class is selected when it declares methods and all of them are static, none is named
-     * {@code main}, and it extends nothing but {@code Object}. Synthetic methods count, so a lambda
-     * that captures {@code this} removes the class from selection. An interface or abstract class with
-     * only static methods is selected and fails.
+     * {@code main}, and it extends nothing but {@code Object}. ArchUnit does not report the method a
+     * lambda compiles to, so a lambda that captures {@code this} does not remove the class from
+     * selection. An interface or abstract class with only static methods is selected and fails.
      *
      * @return a rule that fails for every utility class that is not final or has no private constructor
      */
