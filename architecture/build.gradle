@@ -2,7 +2,4 @@ description = "ArchUnit rules describing the conventions CoordinateKit's Java mo
 
 dependencies {
     api libs.archunit
-
-    testImplementation libs.picocli
-    testImplementation libs.slf4j.api
 }

@@ -2,7 +2,41 @@
 
 The base layer CoordinateKit's projects build on. Functionality more than one repository needs is implemented here once and consumed as a published library.
 
-It includes `cli-brand`, the brand banner CoordinateKit's command-line tools print; `changelog-gradle`, the Gradle plugin that generates `CHANGELOG.md` from conventional commits; `conventions`, the Eclipse formatter profile and license header CoordinateKit's Java sources are formatted against; Concordance, the member-order rule those sources follow, which takes three modules of its own; `aggregate-javadoc-gradle`, the Gradle plugin that aggregates a multi-module build's Javadoc; `third-party-licenses-gradle`, the plugin that checks a build's dependency licenses and renders its third-party attribution file; and `version-references-gradle`, the plugin that rewrites the version references in a build's documents and build files when it releases. Every jar comes straight from Maven Central; see [RELEASE.md](RELEASE.md) for how a release ships and how to depend on a `-SNAPSHOT` build instead.
+It includes `architecture`, the ArchUnit rules CoordinateKit's Java modules follow; `cli-brand`, the brand banner CoordinateKit's command-line tools print; `changelog-gradle`, the Gradle plugin that generates `CHANGELOG.md` from conventional commits; `conventions`, the Eclipse formatter profile and license header CoordinateKit's Java sources are formatted against; Concordance, the member-order rule those sources follow, which takes three modules of its own; `aggregate-javadoc-gradle`, the Gradle plugin that aggregates a multi-module build's Javadoc; `third-party-licenses-gradle`, the plugin that checks a build's dependency licenses and renders its third-party attribution file; and `version-references-gradle`, the plugin that rewrites the version references in a build's documents and build files when it releases. Every jar comes straight from Maven Central; see [RELEASE.md](RELEASE.md) for how a release ships and how to depend on a `-SNAPSHOT` build instead.
+
+## Architecture
+
+`FoundationArchitecture` runs CoordinateKit's ArchUnit rules over one module's classes and fails with a single report listing every violation. The rules are public records, no direct use of `System.out` or `System.err`, and package-private JUnit test classes. Add the module as a test dependency, which brings ArchUnit with it.
+
+```groovy
+dependencies {
+    testImplementation "org.coordinatekit.foundation:architecture:0.3.0"
+}
+```
+
+A module calls it from one test. The anchor class fixes the namespace: its package is the module's root package, and every class under it is examined.
+
+```java
+class ArchitectureTest {
+    @Test
+    void architecture__followsConventions() {
+        FoundationArchitecture.builder(ArchitectureTest.class).build().check();
+    }
+}
+```
+
+The builder adjusts what the check examines. `exclude` removes classes from one rule, `excludeNamespace` removes them from every rule, and `disable` turns a rule off for a stated reason. `addRule` and `addCheck` add a rule or check of the module's own beside the built-in ones.
+
+```java
+FoundationArchitecture.builder(ArchitectureTest.class)
+        .exclude(Rule.SYSTEM_STREAMS, Main.class)
+        .excludeNamespace("com.example.widgets.benchmark..")
+        .disable(Rule.PUBLIC_RECORDS, "records are package-private by design here")
+        .build()
+        .check();
+```
+
+The check imports every class under the namespace from the classpath and refuses to run if they come from more than one root. Gradle puts a project dependency on the test classpath as a jar, which is left out, so a Gradle run sees only the module's own classes. IntelliJ puts class directories there instead, so a module whose package nests inside another's, such as `geocoding` and `geocoding.benchmark`, picks up the nested module's classes. The failure names each root and its packages, and `excludeNamespace` on the packages that belong to another module silences it.
 
 ## CLI brand
 
