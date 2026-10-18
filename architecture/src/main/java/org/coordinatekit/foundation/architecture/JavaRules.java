@@ -66,17 +66,7 @@ final class JavaRules {
                     String owner = access.getTarget().getOwner().getName();
                     String field = access.getTarget().getName();
                     if ("java.lang.System".equals(owner) && ("out".equals(field) || "err".equals(field))) {
-                        events.add(
-                                SimpleConditionEvent.violated(
-                                        access,
-                                        String.format(
-                                                "Method %s calls %s.%s",
-                                                access.getOrigin().getFullName(),
-                                                owner,
-                                                field
-                                        )
-                                )
-                        );
+                        events.add(SimpleConditionEvent.violated(access, access.getDescription()));
                     }
                 }
             }

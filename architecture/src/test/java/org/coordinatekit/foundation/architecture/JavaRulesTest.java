@@ -138,7 +138,7 @@ class JavaRulesTest {
     }
 
     @Test
-    void systemStreams__detailNamesMethodAndStream() {
+    void systemStreams__detailNamesMethodStreamAndLocation() {
         // ARRANGE //
         JavaClasses classes = Fixtures.of("SystemOutPrinter");
 
@@ -150,6 +150,7 @@ class JavaRulesTest {
         assertTrue(details.contains("Method "), details);
         assertTrue(details.contains(Fixtures.fullName("SystemOutPrinter") + ".print()"), details);
         assertTrue(details.contains("java.lang.System.out"), details);
+        assertTrue(details.contains("SystemOutPrinter.java:"), details);
     }
 
     @Test
