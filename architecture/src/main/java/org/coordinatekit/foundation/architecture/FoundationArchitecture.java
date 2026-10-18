@@ -110,7 +110,8 @@ import java.util.TreeSet;
  * <p>
  * A failing run throws one {@link AssertionError} that lists every failing rule and check with its
  * violations, in the order of the {@link Rule} constants, then added rules, then added checks, each
- * in the order it was added.
+ * in the order it was added. An added check that throws is listed like any other failure, and what
+ * it threw is attached to the error as a suppressed exception, so its stack trace is kept.
  */
 public final class FoundationArchitecture {
     private static final String OWN_PACKAGE = FoundationArchitecture.class.getPackageName();
@@ -209,18 +210,40 @@ public final class FoundationArchitecture {
         for (ArchRule addedRule : addedRules) {
             evaluate(addedRule.allowEmptyShould(true), examinedProduction).ifPresent(failures::add);
         }
+        List<Throwable> thrown = new ArrayList<>();
         for (NamedCheck addedCheck : addedChecks) {
             try {
                 addedCheck.check().run();
-            } catch (AssertionError error) {
-                String message = Objects.toString(error.getMessage(), error.getClass().getName());
-                failures.add(new Failure(addedCheck.description(), List.of(message)));
+            } catch (AssertionError | RuntimeException error) {
+                thrown.add(error);
+                failures.add(new Failure(addedCheck.description(), List.of(detail(error))));
             }
         }
 
         if (!failures.isEmpty()) {
-            throw new AssertionError(report(failures));
+            AssertionError error = new AssertionError(report(failures));
+            thrown.forEach(error::addSuppressed);
+            throw error;
         }
+    }
+
+    /**
+     * Describes what an added check threw, for the report.
+     *
+     * <p>
+     * An {@link AssertionError} is a violation, so its message stands alone. Any other exception is
+     * prefixed with its class name, so a check that crashed reads differently from one that found
+     * something.
+     *
+     * @param thrown what the check threw
+     * @return the message, or the class name when there is no message
+     */
+    private static String detail(Throwable thrown) {
+        String className = thrown.getClass().getName();
+        if (thrown instanceof AssertionError) {
+            return Objects.toString(thrown.getMessage(), className);
+        }
+        return thrown.getMessage() == null ? className : className + ": " + thrown.getMessage();
     }
 
     /**
@@ -361,7 +384,10 @@ public final class FoundationArchitecture {
          *
          * <p>
          * The check signals failure by throwing {@link AssertionError}, and its message joins the combined
-         * report under the description.
+         * report under the description. A {@link RuntimeException} is reported under the description too,
+         * as its class name and message, and the rules and checks after it still run. Each exception a
+         * check throws is attached to the final error as a suppressed exception. An {@link Error} other
+         * than {@link AssertionError} is not caught.
          *
          * @param description what the check verifies, shown as the failure's rule
          * @param check the check to run
@@ -502,7 +528,7 @@ public final class FoundationArchitecture {
      * A check added through {@link Builder#addCheck(String, Runnable)}.
      *
      * @param description what the check verifies
-     * @param check the check, which throws {@link AssertionError} to fail
+     * @param check the check, which throws {@link AssertionError} or a {@link RuntimeException} to fail
      */
     private record NamedCheck(String description, Runnable check) {}
 }

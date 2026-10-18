@@ -64,6 +64,18 @@ class FoundationArchitectureTest {
     private static final String TEST_CLASS_VISIBILITY = JUnitRules.testClassVisibility().getDescription();
 
     @Test
+    void addCheck__errorOtherThanAssertionErrorPropagates() {
+        // ARRANGE //
+        FoundationArchitecture architecture = newBuilder().addCheck("recursive scan", () -> {
+            throw new StackOverflowError();
+        }).build();
+
+        // ACT //
+        // ASSERT //
+        assertThrows(StackOverflowError.class, () -> architecture.check(Fixtures.of(), Fixtures.of()));
+    }
+
+    @Test
     void addCheck__failureJoinsReport() {
         // ARRANGE //
         FoundationArchitecture architecture = newBuilder().addCheck("no stray files", () -> {
@@ -100,6 +112,60 @@ class FoundationArchitectureTest {
         // ACT //
         // ASSERT //
         assertDoesNotThrow(() -> architecture.check(Fixtures.of(), Fixtures.of()));
+    }
+
+    @Test
+    void addCheck__runtimeExceptionKeepsOtherFailuresAndLaterChecks() {
+        // ARRANGE //
+        FoundationArchitecture architecture = newBuilder().addCheck("file scan", () -> {
+            throw new IllegalStateException("scan failed");
+        }).addCheck("later check", () -> {
+            throw new AssertionError("found stray.txt");
+        }).build();
+
+        // ACT //
+        String message = failure(architecture, Fixtures.of("PublicRecord"), Fixtures.of());
+
+        // ASSERT //
+        assertTrue(message.startsWith("Found 3 architecture violations for 3 rules"), message);
+        assertTrue(message.contains("Rule: " + PUBLIC_RECORDS), message);
+        assertTrue(message.contains("Rule: file scan\n\tjava.lang.IllegalStateException: scan failed"), message);
+        assertTrue(message.contains("Rule: later check\n\tfound stray.txt"), message);
+    }
+
+    @Test
+    void addCheck__runtimeExceptionWithoutMessageNamesItsClass() {
+        // ARRANGE //
+        FoundationArchitecture architecture = newBuilder().addCheck("file scan", () -> {
+            throw new IllegalStateException();
+        }).build();
+
+        // ACT //
+        String message = failure(architecture, Fixtures.of(), Fixtures.of());
+
+        // ASSERT //
+        assertTrue(message.endsWith("Rule: file scan\n\t" + IllegalStateException.class.getName()), message);
+    }
+
+    @Test
+    void addCheck__throwablesAreSuppressedOnTheError() {
+        // ARRANGE //
+        AssertionError violation = new AssertionError("found stray.txt");
+        IllegalStateException crash = new IllegalStateException("scan failed");
+        FoundationArchitecture architecture = newBuilder().addCheck("no stray files", () -> {
+            throw violation;
+        }).addCheck("file scan", () -> {
+            throw crash;
+        }).build();
+
+        // ACT //
+        AssertionError error = assertThrows(
+                AssertionError.class,
+                () -> architecture.check(Fixtures.of(), Fixtures.of())
+        );
+
+        // ASSERT //
+        assertEquals(List.of(violation, crash), List.of(error.getSuppressed()));
     }
 
     @Test
