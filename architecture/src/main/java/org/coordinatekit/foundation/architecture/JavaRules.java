@@ -42,7 +42,6 @@ import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 
 import java.util.List;
-import java.util.regex.Pattern;
 
 /**
  * The {@link ArchRule}s that apply to Java classes in general, one factory per {@link Rule}. A
@@ -57,7 +56,7 @@ import java.util.regex.Pattern;
  * wrong with it, and {@code in} followed by its source location.
  */
 final class JavaRules {
-    private static final Pattern CONSTANT_NAME = Pattern.compile("^[A-Z][A-Z0-9_]*$");
+    private static final String CONSTANT_NAME = "^[A-Z][A-Z0-9_]*$";
     private static final List<String> FORBIDDEN_PACKAGES = List.of(
             "java.util.logging..",
             "sun..",
@@ -95,23 +94,12 @@ final class JavaRules {
                 .areFinal()
                 .and()
                 .areStatic()
-                .should(new ArchCondition<JavaField>("have a name matching " + CONSTANT_NAME.pattern()) {
-                    @Override
-                    public void check(JavaField item, ConditionEvents events) {
-                        if (item.getModifiers().contains(JavaModifier.SYNTHETIC)
-                                || "serialVersionUID".equals(item.getName())
-                                || CONSTANT_NAME.matcher(item.getName()).matches()) {
-                            return;
-                        }
-                        events.add(
-                                SimpleConditionEvent.violated(
-                                        item,
-                                        item.getDescription() + " does not match " + CONSTANT_NAME.pattern() + " in "
-                                                + item.getSourceCodeLocation()
-                                )
-                        );
-                    }
-                })
+                .and()
+                .doNotHaveModifier(JavaModifier.SYNTHETIC)
+                .and()
+                .doNotHaveName("serialVersionUID")
+                .should()
+                .haveNameMatching(CONSTANT_NAME)
                 .as("Constants should follow constant naming conventions")
                 .allowEmptyShould(true);
     }
@@ -271,21 +259,11 @@ final class JavaRules {
      */
     static ArchRule publicFields() {
         return fields().that()
+                .areNotStatic()
+                .and()
                 .doNotHaveModifier(JavaModifier.SYNTHETIC)
-                .should(new ArchCondition<JavaField>("not be public unless static") {
-                    @Override
-                    public void check(JavaField item, ConditionEvents events) {
-                        if (item.getModifiers().contains(JavaModifier.PUBLIC)
-                                && !item.getModifiers().contains(JavaModifier.STATIC)) {
-                            events.add(
-                                    SimpleConditionEvent.violated(
-                                            item,
-                                            item.getDescription() + " is public in " + item.getSourceCodeLocation()
-                                    )
-                            );
-                        }
-                    }
-                })
+                .should()
+                .notBePublic()
                 .as("Fields should not be public unless they are static")
                 .allowEmptyShould(true);
     }
