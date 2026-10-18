@@ -4,8 +4,8 @@
  *
  * <p>
  * The package is excluded from the module's own check, because the violating fixtures would fail
- * it. A fixture carries no test methods, so JUnit has nothing to run in it, and only the fixtures
- * for {@code TEST_CLASS_VISIBILITY} end in {@code Test}.
+ * it. A fixture that carries JUnit annotations is abstract, so no engine runs it, and only the
+ * fixtures for {@code TEST_CLASS_VISIBILITY} end in {@code Test}.
  */
 @NullMarked
 package org.coordinatekit.foundation.architecture.fixtures;

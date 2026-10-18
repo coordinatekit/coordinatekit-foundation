@@ -21,6 +21,7 @@ package org.coordinatekit.foundation.architecture.fixtures;
  */
 public record PrintingRecord(String value) {
     /** Prints the value. */
+    @SuppressWarnings("unused")
     public void print() {
         System.out.println(value);
     }

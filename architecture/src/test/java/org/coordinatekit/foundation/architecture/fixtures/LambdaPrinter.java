@@ -22,6 +22,7 @@ public class LambdaPrinter {
      *
      * @return the task
      */
+    @SuppressWarnings("unused")
     public Runnable task() {
         return () -> System.out.println("lambda");
     }

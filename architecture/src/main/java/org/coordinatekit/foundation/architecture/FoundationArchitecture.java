@@ -146,9 +146,19 @@ public final class FoundationArchitecture {
      */
     private List<ArchRule> archRules(Rule rule) {
         return switch (rule) {
+            case CONSTANT_NAMING -> List.of(JavaRules.constantNaming());
+            case DEPRECATED_API -> List.of(JavaRules.deprecatedApi());
+            case DISABLED_TESTS -> JUnitRules.disabledTests();
+            case FINAL_CLASS_PROTECTED_MEMBERS -> List.of(JavaRules.finalClassProtectedMembers());
+            case FORBIDDEN_IMPORTS -> JavaRules.forbiddenImports();
+            case IMPL_SUFFIX -> List.of(JavaRules.implSuffix());
+            case INTERFACE_PREFIX -> List.of(JavaRules.interfacePrefix());
+            case PUBLIC_FIELDS -> List.of(JavaRules.publicFields());
             case PUBLIC_RECORDS -> List.of(JavaRules.publicRecords());
             case SYSTEM_STREAMS -> List.of(JavaRules.systemStreams());
             case TEST_CLASS_VISIBILITY -> List.of(JUnitRules.testClassVisibility());
+            case TEST_METHOD_VISIBILITY -> List.of(JUnitRules.testMethodVisibility());
+            case UTILITY_CLASSES -> List.of(JavaRules.utilityClasses());
         };
     }
 

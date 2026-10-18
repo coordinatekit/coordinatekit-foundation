@@ -22,6 +22,7 @@ public class SystemErrMethodReference {
      *
      * @return the printer
      */
+    @SuppressWarnings("unused")
     public java.util.function.Consumer<String> printer() {
         return System.err::println;
     }
