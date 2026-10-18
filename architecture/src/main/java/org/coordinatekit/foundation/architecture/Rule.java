@@ -128,9 +128,9 @@ public enum Rule {
     TEST_METHOD_VISIBILITY(Scope.TESTS, true),
 
     /**
-     * Utility classes should be final and declare a private constructor. Examines production classes
-     * and is on by default. A class is a utility class when it declares at least one method, every
-     * declared method is static, none is named {@code main}, and its superclass is absent or
+     * Utility classes should be final and declare only private constructors. Examines production
+     * classes and is on by default. A class is a utility class when it declares at least one method,
+     * every declared method is static, none is named {@code main}, and its superclass is absent or
      * {@code Object}. Fields are not considered. ArchUnit does not report the method a lambda compiles
      * to, so a lambda that captures {@code this} does not remove its class from the rule. An interface
      * or abstract class with only static methods is selected and fails.

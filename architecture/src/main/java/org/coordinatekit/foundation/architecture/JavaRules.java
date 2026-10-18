@@ -18,6 +18,7 @@ package org.coordinatekit.foundation.architecture;
 import static com.tngtech.archunit.base.DescribedPredicate.not;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.lang.conditions.ArchConditions.beFinal;
+import static com.tngtech.archunit.lang.conditions.ArchConditions.haveOnlyPrivateConstructors;
 import static com.tngtech.archunit.lang.conditions.ArchConditions.notBePublic;
 import static com.tngtech.archunit.lang.conditions.ArchPredicates.are;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
@@ -314,7 +315,8 @@ final class JavaRules {
      * lambda compiles to, so a lambda that captures {@code this} does not remove the class from
      * selection. An interface or abstract class with only static methods is selected and fails.
      *
-     * @return a rule that fails for every utility class that is not final or has no private constructor
+     * @return a rule that fails for every utility class that is not final or declares a constructor
+     *         that is not private
      */
     static ArchRule utilityClasses() {
         DescribedPredicate<JavaClass> onlyStaticMethods = DescribedPredicate.describe(
@@ -335,24 +337,8 @@ final class JavaRules {
         return classes().that(onlyStaticMethods)
                 .and(not(extendsAnotherClass))
                 .should(beFinal())
-                .andShould(new ArchCondition<JavaClass>("have a private constructor") {
-                    @Override
-                    public void check(JavaClass item, ConditionEvents events) {
-                        boolean hasPrivateConstructor = item.getConstructors()
-                                .stream()
-                                .anyMatch(constructor -> constructor.getModifiers().contains(JavaModifier.PRIVATE));
-                        if (!hasPrivateConstructor) {
-                            events.add(
-                                    SimpleConditionEvent.violated(
-                                            item,
-                                            item.getDescription() + " does not have a private constructor in "
-                                                    + item.getSourceCodeLocation()
-                                    )
-                            );
-                        }
-                    }
-                })
-                .as("Utility classes should be final and have a private constructor")
+                .andShould(haveOnlyPrivateConstructors())
+                .as("Utility classes should be final and have only private constructors")
                 .allowEmptyShould(true);
     }
 }

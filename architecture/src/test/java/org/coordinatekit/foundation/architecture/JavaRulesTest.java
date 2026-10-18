@@ -59,6 +59,7 @@ import org.coordinatekit.foundation.architecture.fixtures.LowerCaseEnumConstant;
 import org.coordinatekit.foundation.architecture.fixtures.LowerCaseInterfaceConstant;
 import org.coordinatekit.foundation.architecture.fixtures.MainHolder;
 import org.coordinatekit.foundation.architecture.fixtures.MetaDeprecatedTypeUser;
+import org.coordinatekit.foundation.architecture.fixtures.MixedConstructorUtility;
 import org.coordinatekit.foundation.architecture.fixtures.NonPublicFixtures;
 import org.coordinatekit.foundation.architecture.fixtures.OpenProtectedMembers;
 import org.coordinatekit.foundation.architecture.fixtures.OpenUtility;
@@ -329,7 +330,7 @@ class JavaRulesTest {
                 new FactoryParameters(
                         "utilityClasses",
                         () -> List.of(JavaRules.utilityClasses()),
-                        List.of("Utility classes should be final and have a private constructor")
+                        List.of("Utility classes should be final and have only private constructors")
                 )
         );
     }
@@ -653,6 +654,11 @@ class JavaRulesTest {
                         "public constructor violates",
                         List.of(PublicConstructorUtility.class),
                         List.of(PublicConstructorUtility.class)
+                ),
+                new RuleParameters(
+                        "a private constructor beside a public one violates",
+                        List.of(MixedConstructorUtility.class),
+                        List.of(MixedConstructorUtility.class)
                 ),
                 new RuleParameters(
                         "interface with only static methods violates",
