@@ -86,6 +86,13 @@ import org.coordinatekit.foundation.architecture.fixtures.StaticOnlyInterface;
 import org.coordinatekit.foundation.architecture.fixtures.StaticOnlySubclass;
 import org.coordinatekit.foundation.architecture.fixtures.SystemErrMethodReference;
 import org.coordinatekit.foundation.architecture.fixtures.SystemOutPrinter;
+import org.coordinatekit.foundation.architecture.fixtures.ClientConfiguration;
+import org.coordinatekit.foundation.architecture.fixtures.GenericExceptionConstructor;
+import org.coordinatekit.foundation.architecture.fixtures.GenericExceptionDeclarer;
+import org.coordinatekit.foundation.architecture.fixtures.GenericExceptionThrower;
+import org.coordinatekit.foundation.architecture.fixtures.GenericRuntimeExceptionDeclarer;
+import org.coordinatekit.foundation.architecture.fixtures.ServerConfiguration;
+import org.coordinatekit.foundation.architecture.fixtures.SpecificExceptionDeclarer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -104,6 +111,34 @@ class JavaRulesTest {
     record FactoryParameters(String name, Supplier<List<ArchRule>> rules, List<String> descriptions) {}
 
     record RuleParameters(String name, List<Class<?>> fixtures, List<Class<?>> violators) {}
+
+    static Stream<RuleParameters> configurationRecords() {
+        return Stream.of(
+                new RuleParameters(
+                        "record named Configuration violates",
+                        List.of(ServerConfiguration.class),
+                        List.of(ServerConfiguration.class)
+                ),
+                new RuleParameters("class named Configuration passes", List.of(ClientConfiguration.class), List.of()),
+                new RuleParameters("record with another name is not selected", List.of(PublicRecord.class), List.of()),
+                new RuleParameters(
+                        "only the configuration record is named",
+                        List.of(ServerConfiguration.class, ClientConfiguration.class, PublicRecord.class),
+                        List.of(ServerConfiguration.class)
+                )
+        );
+    }
+
+    @MethodSource
+    @ParameterizedTest
+    void configurationRecords(RuleParameters parameters) {
+        Fixtures.assertViolators(
+                List.of(JavaRules.configurationRecords()),
+                parameters.name(),
+                parameters.fixtures(),
+                parameters.violators()
+        );
+    }
 
     static Stream<RuleParameters> constantNaming() {
         return Stream.of(
@@ -279,6 +314,11 @@ class JavaRulesTest {
     static Stream<FactoryParameters> factories() {
         return Stream.of(
                 new FactoryParameters(
+                        "configurationRecords",
+                        () -> List.of(JavaRules.configurationRecords()),
+                        List.of("Configuration classes should not be records")
+                ),
+                new FactoryParameters(
                         "constantNaming",
                         () -> List.of(JavaRules.constantNaming()),
                         List.of("Constants should follow constant naming conventions")
@@ -306,6 +346,11 @@ class JavaRulesTest {
                                 "No classes should import classes in package org.apache.log4j..",
                                 "No classes should import classes in package org.apache.logging.log4j.."
                         )
+                ),
+                new FactoryParameters(
+                        "genericExceptions",
+                        () -> List.of(JavaRules.genericExceptions()),
+                        List.of("Methods should not declare generic Exception or RuntimeException")
                 ),
                 new FactoryParameters(
                         "implSuffix",
@@ -453,6 +498,57 @@ class JavaRulesTest {
     void forbiddenImports(RuleParameters parameters) {
         Fixtures.assertViolators(
                 JavaRules.forbiddenImports(),
+                parameters.name(),
+                parameters.fixtures(),
+                parameters.violators()
+        );
+    }
+
+    static Stream<RuleParameters> genericExceptions() {
+        return Stream.of(
+                new RuleParameters(
+                        "throws Exception violates",
+                        List.of(GenericExceptionDeclarer.class),
+                        List.of(GenericExceptionDeclarer.class)
+                ),
+                new RuleParameters(
+                        "throws RuntimeException violates",
+                        List.of(GenericRuntimeExceptionDeclarer.class),
+                        List.of(GenericRuntimeExceptionDeclarer.class)
+                ),
+                new RuleParameters(
+                        "throws a specific exception passes",
+                        List.of(SpecificExceptionDeclarer.class),
+                        List.of()
+                ),
+                new RuleParameters(
+                        "throwing without declaring passes",
+                        List.of(GenericExceptionThrower.class),
+                        List.of()
+                ),
+                new RuleParameters(
+                        "a constructor that throws Exception is not checked",
+                        List.of(GenericExceptionConstructor.class),
+                        List.of()
+                ),
+                new RuleParameters(
+                        "only the declaring classes are named",
+                        List.of(
+                                GenericExceptionDeclarer.class,
+                                SpecificExceptionDeclarer.class,
+                                GenericRuntimeExceptionDeclarer.class,
+                                GenericExceptionThrower.class
+                        ),
+                        List.of(GenericExceptionDeclarer.class, GenericRuntimeExceptionDeclarer.class)
+                )
+        );
+    }
+
+    @MethodSource
+    @ParameterizedTest
+    void genericExceptions(RuleParameters parameters) {
+        Fixtures.assertViolators(
+                List.of(JavaRules.genericExceptions()),
                 parameters.name(),
                 parameters.fixtures(),
                 parameters.violators()

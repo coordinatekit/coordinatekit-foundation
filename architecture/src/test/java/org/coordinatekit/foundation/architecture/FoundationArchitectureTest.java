@@ -24,14 +24,19 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
+import org.coordinatekit.foundation.architecture.fixtures.CompliantCommand;
 import org.coordinatekit.foundation.architecture.fixtures.DesktopUser;
+import org.coordinatekit.foundation.architecture.fixtures.FixtureVersionProvider;
 import org.coordinatekit.foundation.architecture.fixtures.NonPublicFixtures;
+import org.coordinatekit.foundation.architecture.fixtures.OtherVersionProviderCommand;
 import org.coordinatekit.foundation.architecture.fixtures.PrintingRecord;
 import org.coordinatekit.foundation.architecture.fixtures.PublicClassTest;
 import org.coordinatekit.foundation.architecture.fixtures.PublicEnumTest;
 import org.coordinatekit.foundation.architecture.fixtures.PublicRecord;
 import org.coordinatekit.foundation.architecture.fixtures.StackTracePrinter;
 import org.coordinatekit.foundation.architecture.fixtures.SystemOutPrinter;
+import org.coordinatekit.foundation.architecture.fixtures.cycles.cyclic.CyclicRoot;
+import org.coordinatekit.foundation.architecture.fixtures.cycles.cyclic.child.CyclicChild;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -52,6 +57,8 @@ import java.util.stream.Stream;
  * and {@code excludeNamespace("java.lang..")} silences it.
  */
 class FoundationArchitectureTest {
+    record BlankClassNameParameters(String name, @Nullable String className) {}
+
     record BlankReasonParameters(String name, @Nullable String reason) {}
 
     record RootParameters(String name, boolean inProduction) {}
@@ -65,6 +72,11 @@ class FoundationArchitectureTest {
     ) {}
 
     private static final String ADDED_RULE_DESCRIPTION = "Production classes should be named Zzz";
+    private static final String PACKAGE_CYCLES = PackageCycleRules.packageCycles(CyclicRoot.class.getPackageName())
+            .getDescription();
+    private static final String PICOCLI_COMMANDS_CONFIGURED = PicocliRules
+            .picocliCommands(FixtureVersionProvider.class.getName())
+            .getDescription();
     private static final String PUBLIC_RECORDS = JavaRules.publicRecords().getDescription();
     private static final String SYSTEM_STREAMS = JavaRules.systemStreams().getDescription();
     private static final String TEST_CLASS_VISIBILITY = JUnitRules.testClassVisibility().getDescription();
@@ -432,6 +444,60 @@ class FoundationArchitectureTest {
         assertTrue(message.contains(PublicRecord.class.getName()), message);
     }
 
+    static Stream<BlankClassNameParameters> commandVersionProvider__blankName() {
+        return Stream.of(
+                new BlankClassNameParameters("null", null),
+                new BlankClassNameParameters("empty", ""),
+                new BlankClassNameParameters("blank", "  \t")
+        );
+    }
+
+    @MethodSource
+    @ParameterizedTest
+    void commandVersionProvider__blankName(BlankClassNameParameters parameters) {
+        // ARRANGE //
+        FoundationArchitecture.Builder builder = newBuilder();
+
+        // ACT //
+        IllegalArgumentException thrown = assertThrows(
+                IllegalArgumentException.class,
+                () -> builder.commandVersionProvider(parameters.className()),
+                parameters.name()
+        );
+
+        // ASSERT //
+        assertEquals("A class name is required for commandVersionProvider", thrown.getMessage(), parameters.name());
+    }
+
+    @Test
+    void commandVersionProvider__lastCallWins() {
+        // ARRANGE //
+        FoundationArchitecture architecture = newBuilder().commandVersionProvider("com.example.Unused")
+                .commandVersionProvider(FixtureVersionProvider.class.getName())
+                .build();
+
+        // ACT //
+        // ASSERT //
+        assertDoesNotThrow(() -> architecture.check(Fixtures.of(CompliantCommand.class), Fixtures.of()));
+    }
+
+    @Test
+    void commandVersionProvider__narrowsPicocliCommands() {
+        // ARRANGE //
+        FoundationArchitecture unconfigured = newBuilder().build();
+        FoundationArchitecture configured = newBuilder().commandVersionProvider(FixtureVersionProvider.class.getName())
+                .build();
+
+        // ACT //
+        String message = failure(configured, Fixtures.of(OtherVersionProviderCommand.class), Fixtures.of());
+
+        // ASSERT //
+        assertDoesNotThrow(() -> unconfigured.check(Fixtures.of(OtherVersionProviderCommand.class), Fixtures.of()));
+        assertTrue(message.contains("Rule: " + PICOCLI_COMMANDS_CONFIGURED), message);
+        assertTrue(message.contains(OtherVersionProviderCommand.class.getName()), message);
+        assertDoesNotThrow(() -> configured.check(Fixtures.of(CompliantCommand.class), Fixtures.of()));
+    }
+
     static Stream<BlankReasonParameters> disable__blankReason() {
         return Stream.of(
                 new BlankReasonParameters("null", null),
@@ -482,6 +548,25 @@ class FoundationArchitectureTest {
         // ACT //
         // ASSERT //
         assertDoesNotThrow(() -> architecture.check(Fixtures.of(PublicRecord.class), Fixtures.of()));
+    }
+
+    @Test
+    void enable__packageCyclesStaysOffUntilEnabled() {
+        // ARRANGE //
+        FoundationArchitecture off = FoundationArchitecture.builder(CyclicRoot.class).build();
+        FoundationArchitecture on = FoundationArchitecture.builder(CyclicRoot.class)
+                .enable(Rule.PACKAGE_CYCLES)
+                .build();
+        JavaClasses cycle = Fixtures.of(CyclicRoot.class, CyclicChild.class);
+
+        // ACT //
+        String message = failure(on, cycle, Fixtures.of());
+
+        // ASSERT //
+        assertDoesNotThrow(() -> off.check(cycle, Fixtures.of()));
+        assertTrue(message.contains("Rule: " + PACKAGE_CYCLES), message);
+        assertTrue(message.contains(CyclicRoot.class.getName()), message);
+        assertTrue(message.contains(CyclicChild.class.getName()), message);
     }
 
     @Test

@@ -6,7 +6,7 @@ It includes `architecture`, the ArchUnit rules CoordinateKit's Java modules foll
 
 ## Architecture
 
-`FoundationArchitecture` runs CoordinateKit's ArchUnit rules over one module's classes and fails with a single report listing every violation. Thirteen rules are on by default. They cover constant naming, deprecated and forbidden APIs, protected members of final classes, the `Impl` suffix and the `I` interface prefix, public fields and records, `System.out` and `System.err`, utility classes, and the visibility and disabling of tests. The `Rule` enum lists every rule with what it checks. Add the module as a test dependency, which brings ArchUnit with it.
+`FoundationArchitecture` runs CoordinateKit's ArchUnit rules over one module's classes and fails with a single report listing every violation. Nineteen rules are on by default and `PACKAGE_CYCLES` is opt-in. They cover constant naming, deprecated and forbidden APIs, protected members of final classes, the `Impl` suffix and the `I` interface prefix, public fields and records, records named `*Configuration`, generic exceptions in `throws` clauses, `System.out` and `System.err`, utility classes, logger naming, the visibility and disabling of tests, and picocli commands, options, and mixins. The picocli and SLF4J rules match their types by name, so a module needs neither library. The `Rule` enum lists every rule with what it checks. Add the module as a test dependency, which brings ArchUnit with it.
 
 ```groovy
 dependencies {
@@ -25,13 +25,15 @@ class ArchitectureTest {
 }
 ```
 
-The builder adjusts what the check examines. `exclude` removes classes from one rule, `excludeNamespace` removes them from every rule, and `disable` turns a rule off for a stated reason. `addRule` and `addCheck` add a rule or check of the module's own beside the built-in ones.
+The builder adjusts what the check examines. `exclude` removes classes from one rule, `excludeNamespace` removes them from every rule, `disable` turns a rule off for a stated reason, `enable` turns on a rule that is off by default, and `commandVersionProvider` requires every picocli command to name one version provider class. `addRule` and `addCheck` add a rule or check of the module's own beside the built-in ones.
 
 ```java
 FoundationArchitecture.builder(ArchitectureTest.class)
         .exclude(Rule.SYSTEM_STREAMS, Main.class)
         .excludeNamespace("com.example.widgets.benchmark..")
         .disable(Rule.PUBLIC_RECORDS, "records are package-private by design here")
+        .enable(Rule.PACKAGE_CYCLES)
+        .commandVersionProvider("com.example.cli.ExampleVersionProvider")
         .build()
         .check();
 ```

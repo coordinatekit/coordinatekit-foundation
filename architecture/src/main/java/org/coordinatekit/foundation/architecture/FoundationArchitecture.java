@@ -100,7 +100,8 @@ import java.util.TreeSet;
  * added through the builder, so a module with no records or no loggers passes instead of failing
  * for matching nothing. ArchUnit's {@code archRule.failOnEmptyShould} setting is global to the JVM,
  * and this module never changes it through {@code ArchConfiguration}, so it cannot alter the
- * behavior of any other ArchUnit test that runs beside it.
+ * behavior of any other ArchUnit test that runs beside it. The rules that concern picocli and SLF4J
+ * match their types by name, so a module needs neither library on its classpath.
  *
  * <p>
  * The decider ignores {@code org.coordinatekit.foundation.architecture..}, this module's own
@@ -118,6 +119,7 @@ public final class FoundationArchitecture {
 
     private final List<NamedCheck> addedChecks;
     private final List<ArchRule> addedRules;
+    private final @Nullable String commandVersionProvider;
     private final Map<Rule, String> disabled;
     private final Set<Rule> enabled;
     private final Map<Rule, List<ClassNamePattern>> exclusions;
@@ -127,6 +129,7 @@ public final class FoundationArchitecture {
     private FoundationArchitecture(Builder builder) {
         addedChecks = List.copyOf(builder.addedChecks);
         addedRules = List.copyOf(builder.addedRules);
+        commandVersionProvider = builder.commandVersionProvider;
         disabled = new EnumMap<>(builder.disabled);
         enabled = EnumSet.copyOf(builder.enabled);
         exclusions = new EnumMap<>(Rule.class);
@@ -146,13 +149,20 @@ public final class FoundationArchitecture {
      */
     private List<ArchRule> archRules(Rule rule) {
         return switch (rule) {
+            case CONFIGURATION_RECORDS -> List.of(JavaRules.configurationRecords());
             case CONSTANT_NAMING -> List.of(JavaRules.constantNaming());
             case DEPRECATED_API -> List.of(JavaRules.deprecatedApi());
             case DISABLED_TESTS -> JUnitRules.disabledTests();
             case FINAL_CLASS_PROTECTED_MEMBERS -> List.of(JavaRules.finalClassProtectedMembers());
             case FORBIDDEN_IMPORTS -> JavaRules.forbiddenImports();
+            case GENERIC_EXCEPTIONS -> List.of(JavaRules.genericExceptions());
             case IMPL_SUFFIX -> List.of(JavaRules.implSuffix());
             case INTERFACE_PREFIX -> List.of(JavaRules.interfacePrefix());
+            case LOGGER_NAMING -> LoggerRules.loggerNaming();
+            case PACKAGE_CYCLES -> List.of(PackageCycleRules.packageCycles(namespace));
+            case PICOCLI_COMMANDS -> List.of(PicocliRules.picocliCommands(commandVersionProvider));
+            case PICOCLI_ENVIRONMENT_OPTIONS -> List.of(PicocliRules.picocliEnvironmentOptions());
+            case PICOCLI_MIXIN_VALIDATION -> List.of(PicocliRules.picocliMixinValidation());
             case PUBLIC_FIELDS -> List.of(JavaRules.publicFields());
             case PUBLIC_RECORDS -> List.of(JavaRules.publicRecords());
             case SYSTEM_STREAMS -> List.of(JavaRules.systemStreams());
@@ -379,6 +389,7 @@ public final class FoundationArchitecture {
     public static final class Builder {
         private final List<NamedCheck> addedChecks = new ArrayList<>();
         private final List<ArchRule> addedRules = new ArrayList<>();
+        private @Nullable String commandVersionProvider;
         private final Map<Rule, String> disabled = new EnumMap<>(Rule.class);
         private final Set<Rule> enabled = EnumSet.noneOf(Rule.class);
         private final Map<Rule, List<ClassNamePattern>> exclusions = new EnumMap<>(Rule.class);
@@ -431,6 +442,26 @@ public final class FoundationArchitecture {
          */
         public FoundationArchitecture build() {
             return new FoundationArchitecture(this);
+        }
+
+        /**
+         * Requires every picocli command to name one version provider class.
+         *
+         * <p>
+         * Without this call {@link Rule#PICOCLI_COMMANDS} accepts any provider other than picocli's
+         * default. A later call replaces an earlier one.
+         *
+         * @param className the binary name of the required provider, such as
+         *        {@code com.example.cli.ExampleVersionProvider}
+         * @return this builder
+         * @throws IllegalArgumentException if the name is null, empty, or blank
+         */
+        public Builder commandVersionProvider(@Nullable String className) {
+            if (className == null || className.isBlank()) {
+                throw new IllegalArgumentException("A class name is required for commandVersionProvider");
+            }
+            commandVersionProvider = className;
+            return this;
         }
 
         /**

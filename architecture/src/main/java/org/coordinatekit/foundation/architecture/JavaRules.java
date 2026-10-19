@@ -17,12 +17,18 @@ package org.coordinatekit.foundation.architecture;
 
 import static com.tngtech.archunit.base.DescribedPredicate.not;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.simpleNameEndingWith;
 import static com.tngtech.archunit.lang.conditions.ArchConditions.beFinal;
+import static com.tngtech.archunit.lang.conditions.ArchConditions.declareThrowableOfType;
 import static com.tngtech.archunit.lang.conditions.ArchConditions.haveOnlyPrivateConstructors;
+import static com.tngtech.archunit.lang.conditions.ArchConditions.not;
 import static com.tngtech.archunit.lang.conditions.ArchConditions.notBePublic;
+import static com.tngtech.archunit.lang.conditions.ArchConditions.notBeRecords;
 import static com.tngtech.archunit.lang.conditions.ArchPredicates.are;
+import static com.tngtech.archunit.lang.conditions.ArchPredicates.have;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.fields;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.base.DescribedPredicate;
@@ -81,6 +87,21 @@ final class JavaRules {
      */
     private static boolean anyDeprecated(List<JavaClass> types) {
         return types.stream().anyMatch(type -> type.isAnnotatedWith(Deprecated.class));
+    }
+
+    /**
+     * Creates the rule behind {@link Rule#CONFIGURATION_RECORDS}.
+     *
+     * <p>
+     * The name is matched on the simple name, so {@code Outer.ServerConfiguration} is selected too.
+     *
+     * @return a rule that fails for every record whose simple name ends in {@code Configuration}
+     */
+    static ArchRule configurationRecords() {
+        return classes().that(have(simpleNameEndingWith("Configuration")))
+                .should(notBeRecords())
+                .as("Configuration classes should not be records")
+                .allowEmptyShould(true);
     }
 
     /**
@@ -227,6 +248,28 @@ final class JavaRules {
                                 .allowEmptyShould(true)
                 )
                 .toList();
+    }
+
+    /**
+     * Creates the rule behind {@link Rule#GENERIC_EXCEPTIONS}.
+     *
+     * <p>
+     * The rule reads {@code throws} clauses and not {@code throw} statements, so a method that throws a
+     * {@code RuntimeException} without declaring it passes. Constructors are not examined. A method
+     * that declares a subclass such as {@code IOException} passes, because only the two exact types
+     * count.
+     *
+     * @return a rule that fails for every method that declares {@code Exception} or
+     *         {@code RuntimeException}
+     */
+    static ArchRule genericExceptions() {
+        return methods()
+                .should(
+                        not(declareThrowableOfType(Exception.class))
+                                .and(not(declareThrowableOfType(RuntimeException.class)))
+                )
+                .as("Methods should not declare generic Exception or RuntimeException")
+                .allowEmptyShould(true);
     }
 
     /**

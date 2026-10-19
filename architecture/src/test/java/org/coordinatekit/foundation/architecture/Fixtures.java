@@ -44,9 +44,10 @@ final class Fixtures {
      * Evaluates rules over fixtures and asserts which fixtures the violations name.
      *
      * <p>
-     * A fixture counts as named when the joined details contain its full name followed by {@code .} or
-     * {@code >}. A case lists only the classes whose own violations it asserts, never a target that
-     * those classes merely reference.
+     * A fixture counts as named when the joined details contain its full name followed by {@code .},
+     * {@code >}, or a space, the last being how a custom condition names a class by its full name. A
+     * case lists only the classes whose own violations it asserts, never a target that those classes
+     * merely reference.
      *
      * @param rules the rules to evaluate, whose details are joined
      * @param name what the case shows, for the failure message
@@ -66,7 +67,8 @@ final class Fixtures {
                 .flatMap(result -> result.getFailureReport().getDetails().stream())
                 .collect(Collectors.joining("\n"));
         for (Class<?> fixture : fixtures) {
-            boolean named = details.contains(fixture.getName() + ".") || details.contains(fixture.getName() + ">");
+            boolean named = details.contains(fixture.getName() + ".") || details.contains(fixture.getName() + ">")
+                    || details.contains(fixture.getName() + " ");
             assertEquals(violators.contains(fixture), named, name + ": " + fixture.getSimpleName());
         }
     }
