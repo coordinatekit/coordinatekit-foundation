@@ -18,6 +18,7 @@ package org.coordinatekit.foundation.architecture.fixtures;
 /** A class whose method calls {@code System.out}. */
 public class SystemOutPrinter {
     /** Prints to standard output. */
+    @SuppressWarnings("unused")
     public void print() {
         System.out.println("out");
     }

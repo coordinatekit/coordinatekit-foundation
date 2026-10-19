@@ -28,6 +28,7 @@ public class StackTracePrinter {
      *
      * @param failure the failure to print
      */
+    @SuppressWarnings({"CallToPrintStackTrace", "unused"})
     public void print(Exception failure) {
         failure.printStackTrace();
     }

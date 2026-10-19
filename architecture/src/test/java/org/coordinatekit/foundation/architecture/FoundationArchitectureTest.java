@@ -24,8 +24,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
+import org.coordinatekit.foundation.architecture.fixtures.DesktopUser;
+import org.coordinatekit.foundation.architecture.fixtures.NonPublicFixtures;
 import org.coordinatekit.foundation.architecture.fixtures.PrintingRecord;
+import org.coordinatekit.foundation.architecture.fixtures.PublicClassTest;
+import org.coordinatekit.foundation.architecture.fixtures.PublicEnumTest;
 import org.coordinatekit.foundation.architecture.fixtures.PublicRecord;
+import org.coordinatekit.foundation.architecture.fixtures.StackTracePrinter;
+import org.coordinatekit.foundation.architecture.fixtures.SystemOutPrinter;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -52,8 +58,8 @@ class FoundationArchitectureTest {
 
     record ScopeParameters(
             String name,
-            List<String> production,
-            List<String> tests,
+            List<Class<?>> production,
+            List<Class<?>> tests,
             List<String> reported,
             List<String> notReported
     ) {}
@@ -124,7 +130,7 @@ class FoundationArchitectureTest {
         }).build();
 
         // ACT //
-        String message = failure(architecture, Fixtures.of("PublicRecord"), Fixtures.of());
+        String message = failure(architecture, Fixtures.of(PublicRecord.class), Fixtures.of());
 
         // ASSERT //
         assertTrue(message.startsWith("Found 3 architecture violations for 3 rules"), message);
@@ -188,11 +194,11 @@ class FoundationArchitectureTest {
                 .build();
 
         // ACT //
-        String message = failure(architecture, Fixtures.of("PackagePrivateRecord"), Fixtures.of());
+        String message = failure(architecture, Fixtures.of(NonPublicFixtures.PACKAGE_PRIVATE_RECORD), Fixtures.of());
 
         // ASSERT //
         assertTrue(message.contains("Rule: " + ADDED_RULE_DESCRIPTION), message);
-        assertTrue(message.contains(Fixtures.fullName("PackagePrivateRecord")), message);
+        assertTrue(message.contains(NonPublicFixtures.PACKAGE_PRIVATE_RECORD.getName()), message);
     }
 
     @Test
@@ -204,7 +210,9 @@ class FoundationArchitectureTest {
 
         // ACT //
         // ASSERT //
-        assertDoesNotThrow(() -> architecture.check(Fixtures.of("PackagePrivateRecord"), Fixtures.of()));
+        assertDoesNotThrow(
+                () -> architecture.check(Fixtures.of(NonPublicFixtures.PACKAGE_PRIVATE_RECORD), Fixtures.of())
+        );
     }
 
     @Test
@@ -239,7 +247,7 @@ class FoundationArchitectureTest {
         }).addRule(classes().should().haveSimpleName("Zzz").as(ADDED_RULE_DESCRIPTION)).build();
 
         // ACT //
-        String message = failure(architecture, Fixtures.of("PrintingRecord"), Fixtures.of("PublicClassTest"));
+        String message = failure(architecture, Fixtures.of(PrintingRecord.class), Fixtures.of(PublicClassTest.class));
 
         // ASSERT //
         int publicRecords = message.indexOf("Rule: " + PUBLIC_RECORDS);
@@ -263,8 +271,8 @@ class FoundationArchitectureTest {
         // ASSERT //
         assertDoesNotThrow(
                 () -> architecture.check(
-                        Fixtures.of("PackagePrivateRecord", "StackTracePrinter"),
-                        Fixtures.of("PackagePrivateClassTest")
+                        Fixtures.of(NonPublicFixtures.PACKAGE_PRIVATE_RECORD, StackTracePrinter.class),
+                        Fixtures.of(NonPublicFixtures.PACKAGE_PRIVATE_CLASS_TEST)
                 )
         );
     }
@@ -278,7 +286,7 @@ class FoundationArchitectureTest {
     void check__rootGuardPassesOnceNamespaceIsExcluded(RootParameters parameters) {
         // ARRANGE //
         FoundationArchitecture architecture = newBuilder().excludeNamespace("java.lang..").build();
-        JavaClasses mixed = Fixtures.importWith(List.of(String.class), "PackagePrivateRecord");
+        JavaClasses mixed = Fixtures.of(String.class, NonPublicFixtures.PACKAGE_PRIVATE_RECORD);
 
         // ACT //
         // ASSERT //
@@ -300,7 +308,7 @@ class FoundationArchitectureTest {
     void check__rootGuardRejectsTwoRoots(RootParameters parameters) {
         // ARRANGE //
         FoundationArchitecture architecture = newBuilder().build();
-        JavaClasses mixed = Fixtures.importWith(List.of(String.class), "PublicRecord", "PublicClassTest");
+        JavaClasses mixed = Fixtures.of(String.class, PublicRecord.class, PublicClassTest.class);
         JavaClasses empty = Fixtures.of();
 
         // ACT //
@@ -328,21 +336,21 @@ class FoundationArchitectureTest {
         return Stream.of(
                 new ScopeParameters(
                         "each rule reads its own set",
-                        List.of("PublicRecord"),
-                        List.of("PublicClassTest"),
+                        List.of(PublicRecord.class),
+                        List.of(PublicClassTest.class),
                         List.of(PUBLIC_RECORDS, TEST_CLASS_VISIBILITY),
                         List.of(SYSTEM_STREAMS)
                 ),
                 new ScopeParameters(
                         "a production violator in the test set is not seen",
                         List.of(),
-                        List.of("PublicRecord", "SystemOutPrinter"),
+                        List.of(PublicRecord.class, SystemOutPrinter.class),
                         List.of(),
                         List.of(PUBLIC_RECORDS, SYSTEM_STREAMS, TEST_CLASS_VISIBILITY)
                 ),
                 new ScopeParameters(
                         "a test violator in the production set is not seen",
-                        List.of("PublicClassTest"),
+                        List.of(PublicClassTest.class),
                         List.of(),
                         List.of(),
                         List.of(PUBLIC_RECORDS, SYSTEM_STREAMS, TEST_CLASS_VISIBILITY)
@@ -355,8 +363,8 @@ class FoundationArchitectureTest {
     void check__scopes(ScopeParameters parameters) {
         // ARRANGE //
         FoundationArchitecture architecture = newBuilder().build();
-        JavaClasses production = Fixtures.of(parameters.production().toArray(String[]::new));
-        JavaClasses tests = Fixtures.of(parameters.tests().toArray(String[]::new));
+        JavaClasses production = Fixtures.of(parameters.production().toArray(Class<?>[]::new));
+        JavaClasses tests = Fixtures.of(parameters.tests().toArray(Class<?>[]::new));
 
         // ACT //
         AssertionError error = null;
@@ -386,15 +394,15 @@ class FoundationArchitectureTest {
         FoundationArchitecture architecture = newBuilder().build();
 
         // ACT //
-        String message = failure(architecture, Fixtures.of("PrintingRecord"), Fixtures.of("PublicClassTest"));
+        String message = failure(architecture, Fixtures.of(PrintingRecord.class), Fixtures.of(PublicClassTest.class));
 
         // ASSERT //
         assertTrue(message.startsWith("Found 3 architecture violations for 3 rules"), message);
         assertTrue(message.contains("\n\nRule: " + PUBLIC_RECORDS + "\n\t"), message);
         assertTrue(message.contains("\n\nRule: " + SYSTEM_STREAMS + "\n\t"), message);
         assertTrue(message.contains("\n\nRule: " + TEST_CLASS_VISIBILITY + "\n\t"), message);
-        assertTrue(message.contains(Fixtures.fullName("PrintingRecord")), message);
-        assertTrue(message.contains(Fixtures.fullName("PublicClassTest")), message);
+        assertTrue(message.contains(PrintingRecord.class.getName()), message);
+        assertTrue(message.contains(PublicClassTest.class.getName()), message);
     }
 
     @Test
@@ -404,10 +412,10 @@ class FoundationArchitectureTest {
         FoundationArchitecture insider = newBuilder().build();
 
         // ACT //
-        String insiderMessage = failure(insider, Fixtures.of("PublicRecord"), Fixtures.of());
+        String insiderMessage = failure(insider, Fixtures.of(PublicRecord.class), Fixtures.of());
 
         // ASSERT //
-        assertDoesNotThrow(() -> outsider.check(Fixtures.of("PublicRecord"), Fixtures.of("PublicClassTest")));
+        assertDoesNotThrow(() -> outsider.check(Fixtures.of(PublicRecord.class), Fixtures.of(PublicClassTest.class)));
         assertTrue(insiderMessage.contains(PUBLIC_RECORDS), insiderMessage);
     }
 
@@ -417,11 +425,11 @@ class FoundationArchitectureTest {
         FoundationArchitecture architecture = FoundationArchitecture.builder(PublicRecord.class).build();
 
         // ACT //
-        String message = failure(architecture, Fixtures.of("PublicRecord"), Fixtures.of());
+        String message = failure(architecture, Fixtures.of(PublicRecord.class), Fixtures.of());
 
         // ASSERT //
         assertTrue(message.contains("Rule: " + PUBLIC_RECORDS), message);
-        assertTrue(message.contains(Fixtures.fullName("PublicRecord")), message);
+        assertTrue(message.contains(PublicRecord.class.getName()), message);
     }
 
     static Stream<BlankReasonParameters> disable__blankReason() {
@@ -457,7 +465,7 @@ class FoundationArchitectureTest {
                 .build();
 
         // ACT //
-        String message = failure(architecture, Fixtures.of("PrintingRecord"), Fixtures.of());
+        String message = failure(architecture, Fixtures.of(PrintingRecord.class), Fixtures.of());
 
         // ASSERT //
         assertFalse(message.contains(PUBLIC_RECORDS), message);
@@ -473,7 +481,7 @@ class FoundationArchitectureTest {
 
         // ACT //
         // ASSERT //
-        assertDoesNotThrow(() -> architecture.check(Fixtures.of("PublicRecord"), Fixtures.of()));
+        assertDoesNotThrow(() -> architecture.check(Fixtures.of(PublicRecord.class), Fixtures.of()));
     }
 
     @Test
@@ -482,7 +490,7 @@ class FoundationArchitectureTest {
         FoundationArchitecture architecture = newBuilder().enable(Rule.PUBLIC_RECORDS).build();
 
         // ACT //
-        String message = failure(architecture, Fixtures.of("PublicRecord"), Fixtures.of());
+        String message = failure(architecture, Fixtures.of(PublicRecord.class), Fixtures.of());
 
         // ASSERT //
         assertTrue(message.contains(PUBLIC_RECORDS), message);
@@ -510,23 +518,22 @@ class FoundationArchitectureTest {
         FoundationArchitecture architecture = newBuilder().exclude(Rule.PUBLIC_RECORDS, PrintingRecord.class).build();
 
         // ACT //
-        String message = failure(architecture, Fixtures.of("PrintingRecord"), Fixtures.of());
+        String message = failure(architecture, Fixtures.of(PrintingRecord.class), Fixtures.of());
 
         // ASSERT //
         assertFalse(message.contains("Rule: " + PUBLIC_RECORDS), message);
         assertTrue(message.contains("Rule: " + SYSTEM_STREAMS), message);
-        assertTrue(message.contains(Fixtures.fullName("PrintingRecord")), message);
+        assertTrue(message.contains(PrintingRecord.class.getName()), message);
     }
 
     @Test
     void exclude__byNameRemovesViolationForThatRuleOnly() {
         // ARRANGE //
-        FoundationArchitecture architecture = newBuilder()
-                .exclude(Rule.PUBLIC_RECORDS, Fixtures.fullName("PrintingRecord"))
+        FoundationArchitecture architecture = newBuilder().exclude(Rule.PUBLIC_RECORDS, PrintingRecord.class.getName())
                 .build();
 
         // ACT //
-        String message = failure(architecture, Fixtures.of("PrintingRecord"), Fixtures.of());
+        String message = failure(architecture, Fixtures.of(PrintingRecord.class), Fixtures.of());
 
         // ASSERT //
         assertFalse(message.contains("Rule: " + PUBLIC_RECORDS), message);
@@ -540,11 +547,27 @@ class FoundationArchitectureTest {
 
         // ACT //
         FoundationArchitecture architecture = assertDoesNotThrow(
-                () -> builder.exclude(Rule.PUBLIC_RECORDS, Fixtures.fullName("PublicRecord")).build()
+                () -> builder.exclude(Rule.PUBLIC_RECORDS, PublicRecord.class.getName()).build()
         );
 
         // ASSERT //
-        assertDoesNotThrow(() -> architecture.check(Fixtures.of("PublicRecord"), Fixtures.of()));
+        assertDoesNotThrow(() -> architecture.check(Fixtures.of(PublicRecord.class), Fixtures.of()));
+    }
+
+    @Test
+    void exclude__forbiddenImportsCoversEveryPackage() {
+        // ARRANGE //
+        FoundationArchitecture unexcluded = newBuilder().build();
+        FoundationArchitecture excluded = newBuilder().exclude(Rule.FORBIDDEN_IMPORTS, DesktopUser.class.getName())
+                .build();
+
+        // ACT //
+        String message = failure(unexcluded, Fixtures.of(DesktopUser.class), Fixtures.of());
+
+        // ASSERT //
+        assertTrue(message.contains("No classes should import classes in package java.awt.."), message);
+        assertTrue(message.contains("No classes should import classes in package javax.swing.."), message);
+        assertDoesNotThrow(() -> excluded.check(Fixtures.of(DesktopUser.class), Fixtures.of()));
     }
 
     @Test
@@ -555,7 +578,9 @@ class FoundationArchitectureTest {
 
         // ACT //
         // ASSERT //
-        assertDoesNotThrow(() -> architecture.check(Fixtures.of(), Fixtures.of("PublicClassTest", "PublicEnumTest")));
+        assertDoesNotThrow(
+                () -> architecture.check(Fixtures.of(), Fixtures.of(PublicClassTest.class, PublicEnumTest.class))
+        );
     }
 
     @Test
@@ -580,7 +605,9 @@ class FoundationArchitectureTest {
 
         // ACT //
         // ASSERT //
-        assertDoesNotThrow(() -> architecture.check(Fixtures.of("PrintingRecord"), Fixtures.of("PublicClassTest")));
+        assertDoesNotThrow(
+                () -> architecture.check(Fixtures.of(PrintingRecord.class), Fixtures.of(PublicClassTest.class))
+        );
     }
 
     private static String failure(FoundationArchitecture architecture, JavaClasses production, JavaClasses tests) {
