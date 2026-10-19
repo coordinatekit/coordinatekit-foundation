@@ -25,6 +25,8 @@ import org.coordinatekit.foundation.architecture.fixtures.cycles.acyclic.Acyclic
 import org.coordinatekit.foundation.architecture.fixtures.cycles.acyclic.child.AcyclicChild;
 import org.coordinatekit.foundation.architecture.fixtures.cycles.cyclic.CyclicRoot;
 import org.coordinatekit.foundation.architecture.fixtures.cycles.cyclic.child.CyclicChild;
+import org.coordinatekit.foundation.architecture.fixtures.cycles.siblings.alpha.SiblingAlpha;
+import org.coordinatekit.foundation.architecture.fixtures.cycles.siblings.alphabet.SiblingAlphabet;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -35,6 +37,7 @@ import org.junit.jupiter.api.Test;
 class PackageCycleRulesTest {
     private static final String ACYCLIC_NAMESPACE = Fixtures.PACKAGE + ".cycles.acyclic";
     private static final String CYCLIC_NAMESPACE = Fixtures.PACKAGE + ".cycles.cyclic";
+    private static final String SIBLINGS_NAMESPACE = Fixtures.PACKAGE + ".cycles.siblings";
 
     @Test
     void packageCycles__acyclicPairPasses() {
@@ -116,5 +119,34 @@ class PackageCycleRulesTest {
 
         // ASSERT //
         assertFalse(result.hasViolation(), String.valueOf(result.getFailureReport()));
+    }
+
+    @Test
+    void packageCycles__namespaceDoesNotMatchLookalikeSubpackage() {
+        // ARRANGE //
+        ArchRule rule = PackageCycleRules.packageCycles(SIBLINGS_NAMESPACE + ".alpha");
+        JavaClasses classes = Fixtures.of(SiblingAlpha.class, SiblingAlphabet.class);
+
+        // ACT //
+        EvaluationResult result = rule.evaluate(classes);
+
+        // ASSERT //
+        assertFalse(result.hasViolation(), String.valueOf(result.getFailureReport()));
+    }
+
+    @Test
+    void packageCycles__siblingSubpackagesNameBothClasses() {
+        // ARRANGE //
+        ArchRule rule = PackageCycleRules.packageCycles(SIBLINGS_NAMESPACE);
+        JavaClasses classes = Fixtures.of(SiblingAlpha.class, SiblingAlphabet.class);
+
+        // ACT //
+        EvaluationResult result = rule.evaluate(classes);
+
+        // ASSERT //
+        assertTrue(result.hasViolation());
+        String details = String.join("\n", result.getFailureReport().getDetails());
+        assertTrue(details.contains(SiblingAlpha.class.getName()), details);
+        assertTrue(details.contains(SiblingAlphabet.class.getName()), details);
     }
 }
