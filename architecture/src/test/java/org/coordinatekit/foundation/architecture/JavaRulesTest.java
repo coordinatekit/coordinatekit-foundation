@@ -35,11 +35,16 @@ import org.coordinatekit.foundation.architecture.fixtures.DeprecatedSelfCaller;
 import org.coordinatekit.foundation.architecture.fixtures.DeprecatedType;
 import org.coordinatekit.foundation.architecture.fixtures.DeprecatedTypeUser;
 import org.coordinatekit.foundation.architecture.fixtures.DesktopUser;
+import org.coordinatekit.foundation.architecture.fixtures.FinalClassLoaderOverride;
+import org.coordinatekit.foundation.architecture.fixtures.FinalGenericProtectedOverride;
 import org.coordinatekit.foundation.architecture.fixtures.FinalProtectedConstructor;
 import org.coordinatekit.foundation.architecture.fixtures.FinalProtectedField;
 import org.coordinatekit.foundation.architecture.fixtures.FinalProtectedMethod;
+import org.coordinatekit.foundation.architecture.fixtures.FinalProtectedOverload;
+import org.coordinatekit.foundation.architecture.fixtures.FinalProtectedOverride;
 import org.coordinatekit.foundation.architecture.fixtures.FinalProtectedStaticMethod;
 import org.coordinatekit.foundation.architecture.fixtures.FinalUtility;
+import org.coordinatekit.foundation.architecture.fixtures.FinalWidenedOverride;
 import org.coordinatekit.foundation.architecture.fixtures.I;
 import org.coordinatekit.foundation.architecture.fixtures.IMarker;
 import org.coordinatekit.foundation.architecture.fixtures.IOChannel;
@@ -373,6 +378,31 @@ class JavaRulesTest {
                         List.of()
                 ),
                 new RuleParameters("a class that is not final passes", List.of(OpenProtectedMembers.class), List.of()),
+                new RuleParameters(
+                        "an override of a protected method passes",
+                        List.of(FinalProtectedOverride.class),
+                        List.of()
+                ),
+                new RuleParameters(
+                        "a generic override of a protected method passes",
+                        List.of(FinalGenericProtectedOverride.class),
+                        List.of()
+                ),
+                new RuleParameters(
+                        "an override of a protected JDK method passes",
+                        List.of(FinalClassLoaderOverride.class),
+                        List.of()
+                ),
+                new RuleParameters(
+                        "a protected overload of a protected method violates",
+                        List.of(FinalProtectedOverload.class),
+                        List.of(FinalProtectedOverload.class)
+                ),
+                new RuleParameters(
+                        "a protected override of a package-private method violates",
+                        List.of(FinalWidenedOverride.class),
+                        List.of(FinalWidenedOverride.class)
+                ),
                 new RuleParameters(
                         "only the final classes are named",
                         List.of(FinalProtectedField.class, FinalProtectedConstructor.class, OpenProtectedMembers.class),

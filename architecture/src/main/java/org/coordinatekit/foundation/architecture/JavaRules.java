@@ -42,7 +42,9 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * The {@link ArchRule}s that apply to Java classes in general, one factory per {@link Rule}. A
@@ -115,7 +117,7 @@ final class JavaRules {
      * @return a rule that fails for every use of a deprecated field, method, constructor, or class
      */
     static ArchRule deprecatedApi() {
-        return classes().should(new ArchCondition<JavaClass>("not use deprecated APIs") {
+        return classes().should(new ArchCondition<>("not use deprecated APIs") {
             @Override
             public void check(JavaClass item, ConditionEvents events) {
                 for (JavaFieldAccess access : item.getFieldAccessesFromSelf()) {
@@ -153,19 +155,39 @@ final class JavaRules {
      * The rule reads the class file, so a record and a plain enum are final, and an enum with constant
      * bodies is not.
      *
-     * @return a rule that fails for every protected field or method of a final class
+     * <p>
+     * A method matches a superclass method when the names and erased parameter types are equal. A
+     * generic override such as {@code handle(String)} over {@code handle(T)} erases differently, so the
+     * rule finds it through the bridge method javac generates, which matches the superclass method and
+     * calls the override. A superclass that ArchUnit cannot resolve has no methods, so an override of
+     * one of its methods violates.
+     *
+     * @return a rule that fails for every protected field or method of a final class that does not
+     *         override a protected superclass method
      */
     static ArchRule finalClassProtectedMembers() {
         return classes().that()
                 .haveModifier(JavaModifier.FINAL)
-                .should(new ArchCondition<JavaClass>("not have protected members") {
+                .should(new ArchCondition<>("not have protected members") {
                     @Override
                     public void check(JavaClass item, ConditionEvents events) {
+                        Set<JavaMethod> bridged = new HashSet<>();
+                        for (JavaMethod method : item.getMethods()) {
+                            if (method.getModifiers().contains(JavaModifier.BRIDGE) && overridesProtected(method)) {
+                                method.getMethodCallsFromSelf()
+                                        .stream()
+                                        .flatMap(call -> call.getTarget().resolveMember().stream())
+                                        .filter(target -> target.getOwner().equals(item))
+                                        .forEach(bridged::add);
+                            }
+                        }
                         for (JavaField field : item.getFields()) {
                             checkMember(field, events);
                         }
                         for (JavaMethod method : item.getMethods()) {
-                            checkMember(method, events);
+                            if (!bridged.contains(method) && !overridesProtected(method)) {
+                                checkMember(method, events);
+                            }
                         }
                     }
 
@@ -233,7 +255,7 @@ final class JavaRules {
      *         letter
      */
     static ArchRule interfacePrefix() {
-        return classes().that().areInterfaces().should(new ArchCondition<JavaClass>("not be prefixed with I") {
+        return classes().that().areInterfaces().should(new ArchCondition<>("not be prefixed with I") {
             @Override
             public void check(JavaClass item, ConditionEvents events) {
                 String name = item.getSimpleName();
@@ -247,6 +269,30 @@ final class JavaRules {
                 }
             }
         }).as("Interfaces should not be prefixed with I").allowEmptyShould(true);
+    }
+
+    /**
+     * Returns whether a superclass of the method's owner declares a protected method with the same name
+     * and erased parameter types.
+     *
+     * @param method the method to look up, which may be a bridge
+     * @return {@code true} when the method overrides or hides a protected superclass method
+     */
+    private static boolean overridesProtected(JavaMethod method) {
+        List<String> parameters = method.getRawParameterTypes().stream().map(JavaClass::getName).toList();
+        return method.getOwner()
+                .getAllRawSuperclasses()
+                .stream()
+                .flatMap(superclass -> superclass.getMethods().stream())
+                .anyMatch(
+                        candidate -> candidate.getModifiers().contains(JavaModifier.PROTECTED)
+                                && candidate.getName().equals(method.getName())
+                                && candidate.getRawParameterTypes()
+                                        .stream()
+                                        .map(JavaClass::getName)
+                                        .toList()
+                                        .equals(parameters)
+                );
     }
 
     /**
@@ -292,7 +338,7 @@ final class JavaRules {
      * @return a rule that fails for every read of {@code System.out} or {@code System.err}
      */
     static ArchRule systemStreams() {
-        return classes().should(new ArchCondition<JavaClass>("not use System.out or System.err") {
+        return classes().should(new ArchCondition<>("not use System.out or System.err") {
             @Override
             public void check(JavaClass item, ConditionEvents events) {
                 for (JavaFieldAccess access : item.getFieldAccessesFromSelf()) {

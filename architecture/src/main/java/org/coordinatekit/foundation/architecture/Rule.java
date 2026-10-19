@@ -59,7 +59,10 @@ public enum Rule {
      * Final classes should not declare protected fields or methods. Examines production classes and is
      * on by default. A class counts as final when its class file says so, which includes records and
      * plain enums but not an enum whose constants have bodies. Static members are checked and
-     * constructors are not. Synthetic members are exempt.
+     * constructors are not. A method that overrides or hides a protected method of a superclass is
+     * exempt, because Java allows it no narrower access, and so is a generic override that javac links
+     * to such a method through a bridge. An override of a package-private method violates, since it can
+     * stay package-private. Synthetic members are exempt.
      */
     FINAL_CLASS_PROTECTED_MEMBERS(Scope.PRODUCTION, true),
 
