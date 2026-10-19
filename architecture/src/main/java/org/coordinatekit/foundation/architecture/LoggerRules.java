@@ -25,6 +25,7 @@ import static com.tngtech.archunit.lang.conditions.ArchConditions.notBeStatic;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.fields;
 
 import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaField;
 import com.tngtech.archunit.core.domain.JavaModifier;
 import com.tngtech.archunit.lang.ArchRule;
@@ -46,24 +47,43 @@ final class LoggerRules {
     private LoggerRules() {}
 
     /**
-     * Creates the predicate that selects logger fields declared in an abstract class.
+     * Creates the predicate that matches an abstract class, as opposed to an interface or an enum that
+     * the class file also marks abstract.
      *
-     * @return a predicate that is true for a field of type {@code org.slf4j.Logger} whose owner is
-     *         abstract
+     * @return a predicate that is true for an abstract class that is neither an interface nor an enum
      */
-    private static DescribedPredicate<JavaField> abstractLoggerField() {
-        return rawType(LOGGER).<JavaField>forSubtype().and(declaredIn(modifier(JavaModifier.ABSTRACT)));
+    private static DescribedPredicate<JavaClass> abstractClass() {
+        return modifier(JavaModifier.ABSTRACT).<JavaClass>forSubtype()
+                .and(DescribedPredicate.not(JavaClass.Predicates.INTERFACES))
+                .and(DescribedPredicate.not(JavaClass.Predicates.ENUMS));
     }
 
     /**
-     * Creates the predicate that selects logger fields declared in a class that is not abstract.
+     * Creates the predicate that selects logger fields declared in an abstract class.
      *
-     * @return a predicate that is true for a field of type {@code org.slf4j.Logger} whose owner is not
-     *         abstract
+     * <p>
+     * The class file marks every interface abstract, and marks an enum abstract when it declares an
+     * abstract method for its constants to implement. Neither is an abstract class here, so both are
+     * left out.
+     *
+     * @return a predicate that is true for a field of type {@code org.slf4j.Logger} whose owner is an
+     *         abstract class that is neither an interface nor an enum
+     */
+    private static DescribedPredicate<JavaField> abstractLoggerField() {
+        return rawType(LOGGER).<JavaField>forSubtype().and(declaredIn(abstractClass()));
+    }
+
+    /**
+     * Creates the predicate that selects logger fields declared in a class that is not an abstract
+     * class. An enum with an abstract method counts as concrete.
+     *
+     * @return a predicate that is true for a field of type {@code org.slf4j.Logger} whose owner is
+     *         neither an abstract class nor an interface
      */
     private static DescribedPredicate<JavaField> concreteLoggerField() {
         return rawType(LOGGER).<JavaField>forSubtype()
-                .and(DescribedPredicate.not(declaredIn(modifier(JavaModifier.ABSTRACT))));
+                .and(declaredIn(DescribedPredicate.not(abstractClass())))
+                .and(declaredIn(DescribedPredicate.not(JavaClass.Predicates.INTERFACES)));
     }
 
     /**
@@ -72,7 +92,8 @@ final class LoggerRules {
      *
      * <p>
      * A field is selected when its raw type is exactly {@code org.slf4j.Logger}, so a field of a
-     * subtype such as an interface that extends it is not.
+     * subtype such as an interface that extends it is not. A field declared in an interface is not
+     * selected either, because an interface field cannot be private.
      *
      * @return the abstract-class rule, then the concrete-class rule
      */

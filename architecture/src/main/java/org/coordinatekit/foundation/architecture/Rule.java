@@ -113,10 +113,12 @@ public enum Rule {
     /**
      * Loggers should follow one naming scheme. Examines production classes and is on by default. Two
      * rules sit under this constant. In an abstract class a field of type {@code org.slf4j.Logger} must
-     * be {@code private final}, not static, and named {@code log}. In any other class it must be
-     * {@code private static final} and named {@code LOG}. The type is matched by name and exactly, so a
-     * field of a subtype such as Gradle's {@code org.gradle.api.logging.Logger}, or of an interface
-     * that extends the SLF4J one, is not selected.
+     * be {@code private final}, not static, and named {@code log}. In any other class, including an
+     * enum that declares an abstract method for its constants, it must be {@code private static final}
+     * and named {@code LOG}. A field declared in an interface is not selected, because an interface
+     * field cannot be private. The type is matched by name and exactly, so a field of a subtype such as
+     * Gradle's {@code org.gradle.api.logging.Logger}, or of an interface that extends the SLF4J one, is
+     * not selected.
      */
     LOGGER_NAMING(Scope.PRODUCTION, true),
 

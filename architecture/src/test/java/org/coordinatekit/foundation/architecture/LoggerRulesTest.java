@@ -21,12 +21,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.EvaluationResult;
+import org.coordinatekit.foundation.architecture.fixtures.AbstractEnumLogger;
 import org.coordinatekit.foundation.architecture.fixtures.AbstractLogger;
 import org.coordinatekit.foundation.architecture.fixtures.ConcreteLogger;
 import org.coordinatekit.foundation.architecture.fixtures.ExtendedLogger;
 import org.coordinatekit.foundation.architecture.fixtures.ExtendedLoggerHolder;
 import org.coordinatekit.foundation.architecture.fixtures.InstanceLogger;
+import org.coordinatekit.foundation.architecture.fixtures.InterfaceLogger;
 import org.coordinatekit.foundation.architecture.fixtures.MisnamedLogger;
+import org.coordinatekit.foundation.architecture.fixtures.NonFinalLogger;
+import org.coordinatekit.foundation.architecture.fixtures.PackagePrivateLogger;
 import org.coordinatekit.foundation.architecture.fixtures.StaticAbstractLogger;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -101,6 +105,26 @@ class LoggerRulesTest {
                         "abstract class with a static logger violates",
                         List.of(StaticAbstractLogger.class),
                         List.of(StaticAbstractLogger.class)
+                ),
+                new RuleParameters(
+                        "concrete class with a package-private logger violates",
+                        List.of(PackagePrivateLogger.class),
+                        List.of(PackagePrivateLogger.class)
+                ),
+                new RuleParameters(
+                        "concrete class with a non-final logger violates",
+                        List.of(NonFinalLogger.class),
+                        List.of(NonFinalLogger.class)
+                ),
+                new RuleParameters(
+                        "a logger held by an interface is not selected",
+                        List.of(InterfaceLogger.class),
+                        List.of()
+                ),
+                new RuleParameters(
+                        "an enum with an abstract method follows the concrete-class rule",
+                        List.of(AbstractEnumLogger.class),
+                        List.of()
                 ),
                 new RuleParameters(
                         "a field of a logger subtype is not selected",
