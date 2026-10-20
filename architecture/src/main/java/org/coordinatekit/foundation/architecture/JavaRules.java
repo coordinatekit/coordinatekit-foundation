@@ -257,13 +257,16 @@ final class JavaRules {
      * The rule reads {@code throws} clauses and not {@code throw} statements, so a method that throws a
      * {@code RuntimeException} without declaring it passes. Constructors are not examined. A method
      * that declares a subclass such as {@code IOException} passes, because only the two exact types
-     * count.
+     * count. Synthetic methods are skipped: javac gives a bridge method the {@code throws} clause of
+     * the supertype method it bridges, so an implementation of {@code Callable<String>} that declares
+     * nothing would otherwise be reported for the bridge {@code Object call() throws Exception}.
      *
-     * @return a rule that fails for every method that declares {@code Exception} or
+     * @return a rule that fails for every non-synthetic method that declares {@code Exception} or
      *         {@code RuntimeException}
      */
     static ArchRule genericExceptions() {
-        return methods()
+        return methods().that()
+                .doNotHaveModifier(JavaModifier.SYNTHETIC)
                 .should(
                         not(declareThrowableOfType(Exception.class))
                                 .and(not(declareThrowableOfType(RuntimeException.class)))

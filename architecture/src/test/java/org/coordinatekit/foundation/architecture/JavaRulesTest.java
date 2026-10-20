@@ -21,7 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.EvaluationResult;
+import org.coordinatekit.foundation.architecture.fixtures.BridgeMethodCallable;
 import org.coordinatekit.foundation.architecture.fixtures.CapturingLambdaUtility;
+import org.coordinatekit.foundation.architecture.fixtures.ClientConfiguration;
 import org.coordinatekit.foundation.architecture.fixtures.ComSunUser;
 import org.coordinatekit.foundation.architecture.fixtures.ConstantNames;
 import org.coordinatekit.foundation.architecture.fixtures.CurrentApiCaller;
@@ -45,6 +47,10 @@ import org.coordinatekit.foundation.architecture.fixtures.FinalProtectedOverride
 import org.coordinatekit.foundation.architecture.fixtures.FinalProtectedStaticMethod;
 import org.coordinatekit.foundation.architecture.fixtures.FinalUtility;
 import org.coordinatekit.foundation.architecture.fixtures.FinalWidenedOverride;
+import org.coordinatekit.foundation.architecture.fixtures.GenericExceptionConstructor;
+import org.coordinatekit.foundation.architecture.fixtures.GenericExceptionDeclarer;
+import org.coordinatekit.foundation.architecture.fixtures.GenericExceptionThrower;
+import org.coordinatekit.foundation.architecture.fixtures.GenericRuntimeExceptionDeclarer;
 import org.coordinatekit.foundation.architecture.fixtures.I;
 import org.coordinatekit.foundation.architecture.fixtures.IMarker;
 import org.coordinatekit.foundation.architecture.fixtures.IOChannel;
@@ -77,8 +83,10 @@ import org.coordinatekit.foundation.architecture.fixtures.PublicEnumTest;
 import org.coordinatekit.foundation.architecture.fixtures.PublicInstanceField;
 import org.coordinatekit.foundation.architecture.fixtures.PublicRecord;
 import org.coordinatekit.foundation.architecture.fixtures.PublicStaticField;
+import org.coordinatekit.foundation.architecture.fixtures.ServerConfiguration;
 import org.coordinatekit.foundation.architecture.fixtures.ServiceImpl;
 import org.coordinatekit.foundation.architecture.fixtures.ServiceImpls;
+import org.coordinatekit.foundation.architecture.fixtures.SpecificExceptionDeclarer;
 import org.coordinatekit.foundation.architecture.fixtures.StackTracePrinter;
 import org.coordinatekit.foundation.architecture.fixtures.StaticInitializerPrinter;
 import org.coordinatekit.foundation.architecture.fixtures.StaticOnlyAbstractClass;
@@ -86,13 +94,6 @@ import org.coordinatekit.foundation.architecture.fixtures.StaticOnlyInterface;
 import org.coordinatekit.foundation.architecture.fixtures.StaticOnlySubclass;
 import org.coordinatekit.foundation.architecture.fixtures.SystemErrMethodReference;
 import org.coordinatekit.foundation.architecture.fixtures.SystemOutPrinter;
-import org.coordinatekit.foundation.architecture.fixtures.ClientConfiguration;
-import org.coordinatekit.foundation.architecture.fixtures.GenericExceptionConstructor;
-import org.coordinatekit.foundation.architecture.fixtures.GenericExceptionDeclarer;
-import org.coordinatekit.foundation.architecture.fixtures.GenericExceptionThrower;
-import org.coordinatekit.foundation.architecture.fixtures.GenericRuntimeExceptionDeclarer;
-import org.coordinatekit.foundation.architecture.fixtures.ServerConfiguration;
-import org.coordinatekit.foundation.architecture.fixtures.SpecificExceptionDeclarer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -515,6 +516,11 @@ class JavaRulesTest {
                         "throws RuntimeException violates",
                         List.of(GenericRuntimeExceptionDeclarer.class),
                         List.of(GenericRuntimeExceptionDeclarer.class)
+                ),
+                new RuleParameters(
+                        "bridge method of a generic supertype passes",
+                        List.of(BridgeMethodCallable.class),
+                        List.of()
                 ),
                 new RuleParameters(
                         "throws a specific exception passes",
