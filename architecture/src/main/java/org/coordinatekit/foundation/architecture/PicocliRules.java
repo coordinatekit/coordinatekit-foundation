@@ -135,8 +135,7 @@ final class PicocliRules {
      * Creates the condition behind {@link Rule#PICOCLI_COMMANDS}.
      *
      * <p>
-     * The two halves are checked in order and only the first failing one is reported, so a command that
-     * lacks both is reported for the help options alone.
+     * Each missing half is reported separately, so a command that lacks both gets two violations.
      *
      * @param versionProvider the binary name of the one class the command must name, or {@code null} to
      *        accept any class other than picocli's default
@@ -165,7 +164,8 @@ final class PicocliRules {
                                     item.getFullName() + " does not declare mixinStandardHelpOptions = true"
                             )
                     );
-                } else if (!providerAccepted) {
+                }
+                if (!providerAccepted) {
                     events.add(
                             SimpleConditionEvent.violated(
                                     item,
@@ -175,7 +175,8 @@ final class PicocliRules {
                                                             + ".class")
                             )
                     );
-                } else {
+                }
+                if (mixinStandardHelpOptions && providerAccepted) {
                     events.add(
                             SimpleConditionEvent
                                     .satisfied(item, item.getFullName() + " declares the required command conventions")
@@ -249,8 +250,8 @@ final class PicocliRules {
      * A for some other purpose and calls {@code validate()} on field B therefore satisfies both, so a
      * class with two mixins of the same type can pass while one of them is never validated.
      *
-     * @return a rule that fails for every mixin field whose type declares {@code validate()} and which
-     *         no method of the declaring class validates
+     * @return a rule that fails for every mixin field whose type declares or inherits
+     *         {@code validate()} and which no method of the declaring class validates
      */
     static ArchRule picocliMixinValidation() {
         return fields().that(validatableMixinField())
@@ -281,15 +282,21 @@ final class PicocliRules {
     /**
      * Creates the predicate that selects mixin fields whose type can be validated.
      *
-     * @return a predicate that is true for a field annotated with {@code @Mixin} whose type declares
-     *         {@code validate()}
+     * @return a predicate that is true for a field annotated with {@code @Mixin} whose type declares or
+     *         inherits a no-argument {@code validate()}
      */
     private static DescribedPredicate<JavaField> validatableMixinField() {
         return annotatedWith(MIXIN_ANNOTATION).<JavaField>forSubtype()
                 .and(new DescribedPredicate<>("declares a " + VALIDATE_METHOD_NAME + "() method") {
                     @Override
                     public boolean test(JavaField field) {
-                        return field.getRawType().tryGetMethod(VALIDATE_METHOD_NAME).isPresent();
+                        return field.getRawType()
+                                .getAllMethods()
+                                .stream()
+                                .anyMatch(
+                                        method -> VALIDATE_METHOD_NAME.equals(method.getName())
+                                                && method.getRawParameterTypes().isEmpty()
+                                );
                     }
                 });
     }

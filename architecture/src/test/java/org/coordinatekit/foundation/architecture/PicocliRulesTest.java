@@ -26,6 +26,9 @@ import org.coordinatekit.foundation.architecture.fixtures.CompliantCommand;
 import org.coordinatekit.foundation.architecture.fixtures.CompliantEnvironmentOption;
 import org.coordinatekit.foundation.architecture.fixtures.FixtureVersionProvider;
 import org.coordinatekit.foundation.architecture.fixtures.IndirectlyValidatingMixinHolder;
+import org.coordinatekit.foundation.architecture.fixtures.InheritedValidateUnvalidatedHolder;
+import org.coordinatekit.foundation.architecture.fixtures.InheritedValidateValidatingHolder;
+import org.coordinatekit.foundation.architecture.fixtures.MissingEverythingCommand;
 import org.coordinatekit.foundation.architecture.fixtures.MissingStandardHelpCommand;
 import org.coordinatekit.foundation.architecture.fixtures.MissingVersionProviderCommand;
 import org.coordinatekit.foundation.architecture.fixtures.MultipleLongNamesEnvironmentOption;
@@ -154,6 +157,12 @@ class PicocliRulesTest {
                         List.of(MissingVersionProviderCommand.class)
                 ),
                 new CommandParameters(
+                        "unconfigured: missing both halves violates",
+                        null,
+                        List.of(MissingEverythingCommand.class),
+                        List.of(MissingEverythingCommand.class)
+                ),
+                new CommandParameters(
                         "unconfigured: only the violating commands are named",
                         null,
                         List.of(
@@ -219,6 +228,19 @@ class PicocliRulesTest {
         assertTrue(other.contains("does not declare versionProvider = " + CONFIGURED_PROVIDER + ".class"), other);
     }
 
+    @Test
+    void picocliCommands__detailReportsBothMissingHalves() {
+        // ARRANGE //
+        ArchRule rule = PicocliRules.picocliCommands(null);
+
+        // ACT //
+        String details = details(rule, MissingEverythingCommand.class);
+
+        // ASSERT //
+        assertTrue(details.contains("does not declare mixinStandardHelpOptions = true"), details);
+        assertTrue(details.contains("does not declare a versionProvider"), details);
+    }
+
     static Stream<RuleParameters> picocliEnvironmentOptions() {
         return Stream.of(
                 new RuleParameters(
@@ -276,6 +298,16 @@ class PicocliRulesTest {
                         "validating the mixin through a helper passes",
                         List.of(IndirectlyValidatingMixinHolder.class),
                         List.of()
+                ),
+                new RuleParameters(
+                        "validating a mixin whose validate() is inherited passes",
+                        List.of(InheritedValidateValidatingHolder.class),
+                        List.of()
+                ),
+                new RuleParameters(
+                        "never validating a mixin whose validate() is inherited violates",
+                        List.of(InheritedValidateUnvalidatedHolder.class),
+                        List.of(InheritedValidateUnvalidatedHolder.class)
                 ),
                 new RuleParameters(
                         "a mixin type without validate() is not selected",

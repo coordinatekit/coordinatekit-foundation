@@ -142,12 +142,11 @@ public enum Rule {
     /**
      * Picocli commands should declare {@code mixinStandardHelpOptions = true} and a version provider.
      * Examines production classes and is on by default. A class is a command when it is annotated with
-     * {@code picocli.CommandLine.Command}, and the annotation is matched by name. The two halves are
-     * checked in order and only the first failing one is reported. Without configuration the provider
-     * can be any class other than picocli's default, {@code picocli.CommandLine.NoVersionProvider}, so
-     * a command that leaves the property out fails. After
-     * {@link FoundationArchitecture.Builder#commandVersionProvider(String)} the provider must be
-     * exactly the class it names.
+     * {@code picocli.CommandLine.Command}, and the annotation is matched by name. A command missing
+     * both halves is reported for each. Without configuration the provider can be any class other than
+     * picocli's default, {@code picocli.CommandLine.NoVersionProvider}, so a command that leaves the
+     * property out fails. After {@link FoundationArchitecture.Builder#commandVersionProvider(String)}
+     * the provider must be exactly the class it names.
      */
     PICOCLI_COMMANDS(Scope.PRODUCTION, true),
 
@@ -164,12 +163,13 @@ public enum Rule {
     /**
      * Picocli mixins that can be validated should be validated by the class that declares them.
      * Examines production classes and is on by default. A field annotated with
-     * {@code picocli.CommandLine.Mixin} whose type declares a no-argument {@code validate()} method
-     * violates the rule unless a method of the declaring class both reads the field and calls
-     * {@code validate()}. Validating a throwaway instance of the type does not count, and neither does
-     * validating only one of several fields of the same type. A known limitation remains: a method that
-     * reads field A for some other purpose and calls {@code validate()} on field B satisfies the rule
-     * for both fields.
+     * {@code picocli.CommandLine.Mixin} whose type declares or inherits a no-argument
+     * {@code validate()} method violates the rule unless a method of the declaring class both reads the
+     * field and calls {@code validate()}. Validating a throwaway instance of the type does not count,
+     * and neither does validating only one of several fields of the same type. A known limitation
+     * remains: a method that reads field A for some other purpose and calls {@code validate()} on field
+     * B satisfies the rule for both fields. Another: a mixin type from a dependency jar is not
+     * selected, because the check does not import jars and so cannot see its methods.
      */
     PICOCLI_MIXIN_VALIDATION(Scope.PRODUCTION, true),
 
