@@ -26,6 +26,16 @@ package org.coordinatekit.foundation.architecture;
  */
 public enum Rule {
     /**
+     * Classes whose simple names end in {@code Configuration} should not be records. Examines
+     * production classes and is on by default. A configuration is often built up in steps by a builder,
+     * a binder, or a framework, which a record without setters does not allow, and it gains options
+     * over time, each of which breaks every caller of a record's canonical constructor. A class with a
+     * builder avoids both. The simple name is matched, so a nested record such as
+     * {@code Outer.ServerConfiguration} violates the rule, and a record with any other name passes.
+     */
+    CONFIGURATION_RECORDS(Scope.PRODUCTION, true),
+
+    /**
      * Fields that are both {@code static} and {@code final} should be named in upper snake case,
      * matching {@code ^[A-Z][A-Z0-9_]*$}. Examines production classes and is on by default. Enum
      * constants and interface constants are included. Synthetic fields and fields named
@@ -78,6 +88,18 @@ public enum Rule {
     FORBIDDEN_IMPORTS(Scope.PRODUCTION, true),
 
     /**
+     * Methods should not declare {@code Exception} or {@code RuntimeException} in a {@code throws}
+     * clause. Examines production classes and is on by default. Such a clause tells a caller nothing
+     * about what can fail, so the caller either catches everything or declares the same clause in turn.
+     * Declare the specific checked exceptions, or wrap the failure in an unchecked one. The rule reads
+     * declarations and not {@code throw} statements, so a method that throws a {@code RuntimeException}
+     * without declaring it passes. Only the two exact types count, so a method that declares
+     * {@code IOException} passes. Constructors are not checked. A class that has to declare a generic
+     * exception, such as an adapter for an interface it does not control, is the expected exclusion.
+     */
+    GENERIC_EXCEPTIONS(Scope.PRODUCTION, true),
+
+    /**
      * Classes should not be named with the suffix {@code Impl}. Examines production classes and is on
      * by default. The pattern {@code .*Impl} is matched against the binary name, so the nested class
      * {@code a.B$FooImpl} matches and {@code a.B$FooImpl$Inner} does not.
@@ -92,6 +114,64 @@ public enum Rule {
      * passes.
      */
     INTERFACE_PREFIX(Scope.PRODUCTION, true),
+
+    /**
+     * Loggers should follow one naming scheme. Examines production classes and is on by default. Two
+     * rules sit under this constant. In an abstract class a field of type {@code org.slf4j.Logger} must
+     * be {@code private final}, not static, and named {@code log}, so that it can be created from the
+     * runtime class and report under the name of the concrete subclass. In any other class, including
+     * an enum that declares an abstract method for its constants, it must be
+     * {@code private static final} and named {@code LOG}. A field declared in an interface is not
+     * selected, because an interface field cannot be private. The type is matched by name and exactly,
+     * so a field of a subtype such as Gradle's {@code org.gradle.api.logging.Logger}, or of an
+     * interface that extends the SLF4J one, is not selected.
+     */
+    LOGGER_NAMING(Scope.PRODUCTION, true),
+
+    /**
+     * Packages under the module's namespace should be free of dependency cycles. Examines production
+     * classes and is off by default, because most modules were not written with the constraint in mind.
+     * {@link FoundationArchitecture.Builder#enable(Rule)} turns it on. Each class goes to a slice named
+     * after its first subpackage segment below the namespace, however deeply it is nested. The classes
+     * that sit directly in the namespace form a slice named {@code (root)}, which ArchUnit's own slice
+     * syntax would drop. A cycle between {@code (root)} and a subpackage counts. An exclusion removes a
+     * class from every slice, so the dependencies it carries are no longer considered.
+     */
+    PACKAGE_CYCLES(Scope.PRODUCTION, false),
+
+    /**
+     * Picocli commands should declare {@code mixinStandardHelpOptions = true} and a version provider.
+     * Examines production classes and is on by default. A class is a command when it is annotated with
+     * {@code picocli.CommandLine.Command}, and the annotation is matched by name. A command missing
+     * both halves is reported for each. Without configuration the provider can be any class other than
+     * picocli's default, {@code picocli.CommandLine.NoVersionProvider}, so a command that leaves the
+     * property out fails. After {@link FoundationArchitecture.Builder#commandVersionProvider(String)}
+     * the provider must be exactly the class it names.
+     */
+    PICOCLI_COMMANDS(Scope.PRODUCTION, true),
+
+    /**
+     * Picocli options that read an environment variable should declare only long names. Examines
+     * production classes and is on by default. A field annotated with
+     * {@code picocli.CommandLine.Option} is selected when its {@code defaultValue} contains
+     * <code>${env:</code>, and it violates the rule when any of its names does not start with
+     * {@code --}. The short form invites retyping a flag when the environment variable is the intended
+     * way to set it.
+     */
+    PICOCLI_ENVIRONMENT_OPTIONS(Scope.PRODUCTION, true),
+
+    /**
+     * Picocli mixins that can be validated should be validated by the class that declares them.
+     * Examines production classes and is on by default. A field annotated with
+     * {@code picocli.CommandLine.Mixin} whose type declares or inherits a no-argument
+     * {@code validate()} method violates the rule unless a method of the declaring class both reads the
+     * field and calls {@code validate()}. Validating a throwaway instance of the type does not count,
+     * and neither does validating only one of several fields of the same type. A known limitation
+     * remains: a method that reads field A for some other purpose and calls {@code validate()} on field
+     * B satisfies the rule for both fields. Another: a mixin type from a dependency jar is not
+     * selected, because the check does not import jars and so cannot see its methods.
+     */
+    PICOCLI_MIXIN_VALIDATION(Scope.PRODUCTION, true),
 
     /**
      * Fields should not be public unless they are static. Examines production classes and is on by

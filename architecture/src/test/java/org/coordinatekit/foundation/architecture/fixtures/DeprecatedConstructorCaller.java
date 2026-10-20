@@ -18,7 +18,7 @@ package org.coordinatekit.foundation.architecture.fixtures;
 /** Calls a deprecated constructor: violates {@code DEPRECATED_API}. */
 @SuppressWarnings("deprecation")
 public class DeprecatedConstructorCaller {
-    @SuppressWarnings("unused")
+    @SuppressWarnings({"unused", "InstantiationOfUtilityClass"})
     void call() {
         new DeprecatedApi();
     }

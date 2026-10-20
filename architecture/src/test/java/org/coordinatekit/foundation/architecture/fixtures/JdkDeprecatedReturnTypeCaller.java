@@ -23,7 +23,6 @@ import javax.xml.parsers.SAXParser;
  * Calls a current JDK method that returns a deprecated JDK type, so the deprecation is reachable
  * only through the signature of the call.
  */
-@SuppressWarnings("deprecation")
 public class JdkDeprecatedReturnTypeCaller {
     @SuppressWarnings("unused")
     void call(SAXParser parser) throws SAXException {

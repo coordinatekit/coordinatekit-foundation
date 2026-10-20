@@ -17,7 +17,7 @@ package org.coordinatekit.foundation.architecture.fixtures;
 
 /** Calls a method that returns a deprecated type: violates {@code DEPRECATED_API}. */
 public class DeprecatedReturnTypeCaller {
-    @SuppressWarnings("unused")
+    @SuppressWarnings({"unused", "ResultOfMethodCallIgnored"})
     void call() {
         DeprecatedApi.returnsDeprecated();
     }

@@ -18,7 +18,7 @@ package org.coordinatekit.foundation.architecture.fixtures;
 /** Calls a deprecated JDK method: violates {@code DEPRECATED_API}. */
 @SuppressWarnings("deprecation")
 public class JdkDeprecatedMethodCaller {
-    @SuppressWarnings("unused")
+    @SuppressWarnings({"unused", "ResultOfMethodCallIgnored"})
     void call() {
         Thread.currentThread().getId();
     }
