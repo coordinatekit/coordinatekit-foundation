@@ -27,7 +27,10 @@ package org.coordinatekit.foundation.architecture;
 public enum Rule {
     /**
      * Classes whose simple names end in {@code Configuration} should not be records. Examines
-     * production classes and is on by default. The simple name is matched, so a nested record such as
+     * production classes and is on by default. A configuration is often built up in steps by a builder,
+     * a binder, or a framework, which a record without setters does not allow, and it gains options
+     * over time, each of which breaks every caller of a record's canonical constructor. A class with a
+     * builder avoids both. The simple name is matched, so a nested record such as
      * {@code Outer.ServerConfiguration} violates the rule, and a record with any other name passes.
      */
     CONFIGURATION_RECORDS(Scope.PRODUCTION, true),
@@ -86,11 +89,13 @@ public enum Rule {
 
     /**
      * Methods should not declare {@code Exception} or {@code RuntimeException} in a {@code throws}
-     * clause. Examines production classes and is on by default. The rule reads declarations and not
-     * {@code throw} statements, so a method that throws a {@code RuntimeException} without declaring it
-     * passes. Only the two exact types count, so a method that declares {@code IOException} passes.
-     * Constructors are not checked. A class that has to declare a generic exception, such as an adapter
-     * for an interface it does not control, is the expected exclusion.
+     * clause. Examines production classes and is on by default. Such a clause tells a caller nothing
+     * about what can fail, so the caller either catches everything or declares the same clause in turn.
+     * Declare the specific checked exceptions, or wrap the failure in an unchecked one. The rule reads
+     * declarations and not {@code throw} statements, so a method that throws a {@code RuntimeException}
+     * without declaring it passes. Only the two exact types count, so a method that declares
+     * {@code IOException} passes. Constructors are not checked. A class that has to declare a generic
+     * exception, such as an adapter for an interface it does not control, is the expected exclusion.
      */
     GENERIC_EXCEPTIONS(Scope.PRODUCTION, true),
 
@@ -113,12 +118,13 @@ public enum Rule {
     /**
      * Loggers should follow one naming scheme. Examines production classes and is on by default. Two
      * rules sit under this constant. In an abstract class a field of type {@code org.slf4j.Logger} must
-     * be {@code private final}, not static, and named {@code log}. In any other class, including an
-     * enum that declares an abstract method for its constants, it must be {@code private static final}
-     * and named {@code LOG}. A field declared in an interface is not selected, because an interface
-     * field cannot be private. The type is matched by name and exactly, so a field of a subtype such as
-     * Gradle's {@code org.gradle.api.logging.Logger}, or of an interface that extends the SLF4J one, is
-     * not selected.
+     * be {@code private final}, not static, and named {@code log}, so that it can be created from the
+     * runtime class and report under the name of the concrete subclass. In any other class, including
+     * an enum that declares an abstract method for its constants, it must be
+     * {@code private static final} and named {@code LOG}. A field declared in an interface is not
+     * selected, because an interface field cannot be private. The type is matched by name and exactly,
+     * so a field of a subtype such as Gradle's {@code org.gradle.api.logging.Logger}, or of an
+     * interface that extends the SLF4J one, is not selected.
      */
     LOGGER_NAMING(Scope.PRODUCTION, true),
 
