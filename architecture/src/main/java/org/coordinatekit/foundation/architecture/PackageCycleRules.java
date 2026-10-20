@@ -58,6 +58,7 @@ final class PackageCycleRules {
      * sit directly in the namespace from every slice. This assignment gives them a slice of their own,
      * so they still take part in the cycle check.
      */
+    @SuppressWarnings("ClassCanBeRecord")
     private static final class SubpackageSliceAssignment implements SliceAssignment {
         /** The name of the slice that holds the classes sitting directly in the namespace. */
         private static final String ROOT_SLICE_NAME = "(root)";

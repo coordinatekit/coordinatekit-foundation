@@ -40,10 +40,11 @@ public class DeprecatedApi {
     @SuppressWarnings("DeprecatedIsStillUsed")
     static void oldMethod() {}
 
+    @SuppressWarnings("UnusedReturnValue")
     static DeprecatedType returnsDeprecated() {
         return new DeprecatedType();
     }
 
-    @SuppressWarnings("unused")
+    @SuppressWarnings({"unused", "SameParameterValue"})
     static void takesDeprecated(@Nullable DeprecatedType type) {}
 }

@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 
 /** A concrete class whose logger is not final: violates {@code LOGGER_NAMING}. */
 public class NonFinalLogger {
+    @SuppressWarnings("FieldMayBeFinal")
     private static Logger LOG = LoggerFactory.getLogger(NonFinalLogger.class);
 
     /** Logs a message. */
