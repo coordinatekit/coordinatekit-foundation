@@ -38,7 +38,6 @@ import org.coordinatekit.foundation.architecture.fixtures.PublicRecordTest;
 import org.coordinatekit.foundation.architecture.fixtures.PublicTestMethod;
 import org.coordinatekit.foundation.architecture.fixtures.PublicUnselectedMethods;
 import org.coordinatekit.foundation.architecture.fixtures.Skipped;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
