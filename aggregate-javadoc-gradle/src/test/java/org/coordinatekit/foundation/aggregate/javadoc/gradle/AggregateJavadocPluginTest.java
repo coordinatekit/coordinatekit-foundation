@@ -40,6 +40,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -47,17 +48,25 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+
+import javax.tools.JavaCompiler;
+import javax.tools.ToolProvider;
 
 /**
  * Unit and functional tests for {@link AggregateJavadocPlugin}. The defaults, the task's
  * configuration, and the failure a build gets for leaving out its title are read off a
  * {@link ProjectBuilder} project, and the ordering of the module groups is checked on the pure
- * function that computes it. What only a real Javadoc run can show, that the groups sort each
- * module's packages onto its own tab and that a module outside the selection is built but not
- * documented, is covered by one TestKit build in {@link #apply__groupsPackagesByModule}.
+ * function that computes it. What only a real Javadoc run can show is covered by two TestKit
+ * builds. {@link #apply__groupsPackagesByModule} shows that the groups sort each module's packages
+ * onto its own tab and that a module outside the selection is built but not documented.
+ * {@link #apply__resolvesClasspathInParallelBuild} shows that the classpath carries every kind of
+ * compile dependency and resolves in a parallel build, and that a project depending on a selected
+ * one still compiles against that project's classes.
  *
  * <p>
  * The fixture build applies the plugin through {@code plugins { id ... }} and
@@ -279,6 +288,34 @@ class AggregateJavadocPluginTest {
         assertEquals(List.of("A.java", "B.java", "C.java"), files);
     }
 
+    @Test
+    void apply__resolvesClasspathInParallelBuild(@TempDir Path directory, @TempDir Path classes) throws IOException {
+        // ARRANGE //
+        writeParallelFixture(directory, classes);
+        GradleRunner runner = GradleRunner.create()
+                .withProjectDir(directory.toFile())
+                .withPluginClasspath()
+                .withArguments("aggregateJavadoc", ":app:compileJava", "--parallel", "--configuration-cache");
+
+        // ACT //
+        BuildResult first = runner.build();
+        BuildResult second = runner.build();
+
+        // ASSERT //
+        assertNotNull(first.task(":aggregateJavadoc"), first.getOutput());
+        assertEquals(TaskOutcome.SUCCESS, first.task(":aggregateJavadoc").getOutcome());
+        assertEquals(
+                TaskOutcome.SUCCESS,
+                first.task(":app:compileJava").getOutcome(),
+                "a project depending on a selected one should still compile against its classes"
+        );
+        Path pages = directory.resolve("build/docs/aggregateJavadoc");
+        assertTrue(Files.exists(pages.resolve("fixture/app/App.html")), "the selected module should be documented");
+        assertFalse(Files.exists(pages.resolve("fixture/provided")), "a compileOnly module should not be documented");
+        assertTrue(second.getOutput().contains("Reusing configuration cache"), second.getOutput());
+        assertEquals(TaskOutcome.UP_TO_DATE, second.task(":aggregateJavadoc").getOutcome());
+    }
+
     /**
      * Flattens an exception and everything that caused it into one string. Gradle wraps a failure
      * thrown from {@code afterEvaluate} in a configuration exception, so the message under test is
@@ -413,12 +450,6 @@ class AggregateJavadocPluginTest {
      * {@code allprojects} block above the {@code aggregateJavadoc} block. Every fixture source is fully
      * documented, because the task fails on a Javadoc warning.
      *
-     * <p>
-     * When the test task sets {@code testKit.fixtureJvmArgs}, the fixture also gets a
-     * {@code gradle.properties} passing it to the daemon as {@code org.gradle.jvmargs}. That is how the
-     * build records coverage from the fixture builds; without it, as under an IDE's own test runner,
-     * the fixture runs the same and records nothing.
-     *
      * @param directory the project directory to write into
      * @throws IOException if the fixture cannot be written
      */
@@ -427,14 +458,7 @@ class AggregateJavadocPluginTest {
                 rootProject.name = "fixture"
                 include "a", "a-b", "support"
                 """);
-        String jvmArgs = System.getProperty("testKit.fixtureJvmArgs");
-        if (jvmArgs != null) {
-            Properties properties = new Properties();
-            properties.setProperty("org.gradle.jvmargs", jvmArgs);
-            try (OutputStream file = Files.newOutputStream(directory.resolve("gradle.properties"))) {
-                properties.store(file, null);
-            }
-        }
+        writeGradleProperties(directory);
         Files.writeString(directory.resolve("build.gradle"), """
                 plugins {
                     id "org.coordinatekit.foundation.aggregate-javadoc"
@@ -493,6 +517,188 @@ class AggregateJavadocPluginTest {
                     /** Creates the type. */
                     public B() {}
                 }
+                """);
+    }
+
+    /**
+     * Writes a fixture's {@code gradle.properties} when the test task sets
+     * {@code testKit.fixtureJvmArgs}, passing it to the daemon as {@code org.gradle.jvmargs}. That is
+     * how the build records coverage from the fixture builds; without it, as under an IDE's own test
+     * runner, the fixture runs the same and records nothing.
+     *
+     * @param directory the fixture's root directory
+     * @throws IOException if the file cannot be written
+     */
+    private static void writeGradleProperties(Path directory) throws IOException {
+        String jvmArgs = System.getProperty("testKit.fixtureJvmArgs");
+        if (jvmArgs != null) {
+            Properties properties = new Properties();
+            properties.setProperty("org.gradle.jvmargs", jvmArgs);
+            try (OutputStream file = Files.newOutputStream(directory.resolve("gradle.properties"))) {
+                properties.store(file, null);
+            }
+        }
+    }
+
+    /**
+     * Writes a consumer build whose one documented signature reaches every kind of compile dependency.
+     * The selected module {@code app} returns a type from an external module whose version comes from a
+     * BOM, returns a type from the selected module {@code core}, and accepts a type from
+     * {@code provided}, which it declares {@code compileOnly} and which is not selected. The task fails
+     * with a missing symbol if any of the three is absent from its classpath, and {@code app}'s own
+     * compilation fails if its dependency on {@code core} selects anything but {@code core}'s classes.
+     *
+     * <p>
+     * The external module and the BOM live in a file repository under {@code repository}, so the build
+     * runs offline. Every project, the root included, declares that repository.
+     *
+     * @param directory the project directory to write into
+     * @param classes a scratch directory to compile the external module's type into
+     * @throws IOException if the fixture cannot be written
+     */
+    private static void writeParallelFixture(Path directory, Path classes) throws IOException {
+        Files.writeString(directory.resolve("settings.gradle"), """
+                rootProject.name = "fixture"
+                include "app", "core", "provided"
+                """);
+        writeGradleProperties(directory);
+        Files.writeString(directory.resolve("build.gradle"), """
+                plugins {
+                    id "org.coordinatekit.foundation.aggregate-javadoc"
+                }
+
+                allprojects {
+                    group = "fixture"
+                    repositories {
+                        maven { url = rootProject.file("repository").toURI() }
+                    }
+                }
+
+                aggregateJavadoc {
+                    projects = [project(":app"), project(":core")]
+                    title = "Fixture"
+                }
+                """);
+        writeRepository(directory.resolve("repository"), classes);
+
+        for (String module : List.of("app", "core", "provided")) {
+            Files.createDirectories(directory.resolve(module));
+            Files.writeString(directory.resolve(module).resolve("build.gradle"), "plugins { id \"java-library\" }\n");
+        }
+        Files.writeString(directory.resolve("app/build.gradle"), """
+                dependencies {
+                    implementation platform("fixture.external:bom:1.0")
+                    implementation "fixture.external:lib"
+                    implementation project(":core")
+                    compileOnly project(":provided")
+                }
+                """, StandardOpenOption.APPEND);
+
+        writeSource(directory, "core", "fixture.core", "Core", """
+                /** A selected type the first one depends on. */
+                public class Core {
+                    /** Creates the type. */
+                    public Core() {}
+                }
+                """);
+        writeSource(directory, "provided", "fixture.provided", "Provided", """
+                /** A type only available at compile time. */
+                public class Provided {
+                    /** Creates the type. */
+                    public Provided() {}
+                }
+                """);
+        writeSource(directory, "app", "fixture.app", "App", """
+                import fixture.core.Core;
+                import fixture.external.Lib;
+                import fixture.provided.Provided;
+
+                /** The documented type whose signatures reach every kind of compile dependency. */
+                public class App {
+                    /** Creates the type. */
+                    public App() {}
+
+                    /**
+                     * Returns the selected type this one depends on.
+                     *
+                     * @return a new core type
+                     */
+                    public Core core() {
+                        return new Core();
+                    }
+
+                    /**
+                     * Returns the type from the external module.
+                     *
+                     * @return a new external type
+                     */
+                    public Lib lib() {
+                        return new Lib();
+                    }
+
+                    /**
+                     * Accepts the type from the {@code compileOnly} module.
+                     *
+                     * @param provided any instance
+                     */
+                    public void provided(Provided provided) {}
+                }
+                """);
+    }
+
+    /**
+     * Writes a Maven repository holding {@code fixture.external:lib:1.0}, a jar with the one type
+     * {@code fixture.external.Lib}, and {@code fixture.external:bom:1.0}, a BOM that pins the jar's
+     * version.
+     *
+     * @param repository the repository's root directory
+     * @param classes a scratch directory to compile the type into
+     * @throws IOException if the repository cannot be written
+     */
+    private static void writeRepository(Path repository, Path classes) throws IOException {
+        Path source = Files.writeString(classes.resolve("Lib.java"), """
+                package fixture.external;
+
+                public class Lib {}
+                """);
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        assertEquals(0, compiler.run(null, null, null, "-d", classes.toString(), source.toString()));
+
+        Path lib = Files.createDirectories(repository.resolve("fixture/external/lib/1.0"));
+        try (JarOutputStream jar = new JarOutputStream(Files.newOutputStream(lib.resolve("lib-1.0.jar")))) {
+            jar.putNextEntry(new JarEntry("fixture/external/Lib.class"));
+            Files.copy(classes.resolve("fixture/external/Lib.class"), jar);
+            jar.closeEntry();
+        }
+        Files.writeString(lib.resolve("lib-1.0.pom"), """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <project xmlns="http://maven.apache.org/POM/4.0.0">
+                    <modelVersion>4.0.0</modelVersion>
+                    <groupId>fixture.external</groupId>
+                    <artifactId>lib</artifactId>
+                    <version>1.0</version>
+                </project>
+                """);
+
+        Path bom = Files.createDirectories(repository.resolve("fixture/external/bom/1.0"));
+        Files.writeString(bom.resolve("bom-1.0.pom"), """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <project xmlns="http://maven.apache.org/POM/4.0.0">
+                    <modelVersion>4.0.0</modelVersion>
+                    <groupId>fixture.external</groupId>
+                    <artifactId>bom</artifactId>
+                    <version>1.0</version>
+                    <packaging>pom</packaging>
+                    <dependencyManagement>
+                        <dependencies>
+                            <dependency>
+                                <groupId>fixture.external</groupId>
+                                <artifactId>lib</artifactId>
+                                <version>1.0</version>
+                            </dependency>
+                        </dependencies>
+                    </dependencyManagement>
+                </project>
                 """);
     }
 

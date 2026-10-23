@@ -231,6 +231,14 @@ configure([project(":changelog-gradle"), project(":concordance-gradle"), project
     }
 }
 
+// `aggregateJavadoc` resolves the selected modules' compile dependencies in the root, so the root
+// needs the portal too, but only for that one configuration.
+repositories {
+    gradlePluginPortal {
+        content { onlyForConfigurations("aggregateJavadocClasspath") }
+    }
+}
+
 configure(pluginProjects) {
     apply plugin: "java-gradle-plugin"
 
