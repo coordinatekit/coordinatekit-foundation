@@ -154,6 +154,8 @@ Two annotations grant the exemptions a build cannot express as configuration, an
 
 A multi-module build publishes one set of Javadoc pages, not one per module. The `org.coordinatekit.foundation:aggregate-javadoc-gradle` module publishes a Gradle plugin, under the id `org.coordinatekit.foundation.aggregate-javadoc`, that registers the root project's `aggregateJavadoc` task, so a repository takes the wiring as a plugin instead of copying it into its own build script.
 
+The plugin needs Gradle 8.11 or newer.
+
 The plugin publishes to Maven Central rather than to the Gradle Plugin Portal, so `settings.gradle` has to name Central among its plugin repositories. For `-SNAPSHOT` versions, see [RELEASE.md](RELEASE.md#consuming-snapshots):
 
 ```groovy
@@ -183,7 +185,9 @@ The block's `projects` property names the modules the task covers. It defaults t
 
 `aggregateJavadoc` writes to `build/docs/aggregateJavadoc` and fails on any Javadoc warning. Each module gets a tab of its own, so its package has to be the module's own group plus its name with the dashes turned into dots: `cli-brand` in group `org.example` lives in `org.example.cli.brand`. Javadoc puts a package in the first group whose pattern matches it, so the plugin registers the longest module name first. Without that, the pattern for `concordance` would also claim the packages of `concordance-gradle`. A tab is titled by the module name's segments, each capitalised, and `wordForms` overrides the ones that should not be, such as `cli` for `CLI`.
 
-The task's classpath is the compile classpath of every selected module, so a module the selection depends on is built but not documented. Anything else a build needs on the task goes through `tasks.named`, which defers the configuration until the task is realized:
+The task's classpath covers everything the selected modules compile against: their `implementation` and `compileOnly` dependencies, the BOMs those name through `platform(...)`, and the modules they depend on, which are built but not documented. The root project resolves it through its own `aggregateJavadocClasspath` configuration, so the root has to reach every repository those dependencies come from. Repositories declared in `allprojects { }` or in `dependencyResolutionManagement` cover it, and a build that declares them only in `subprojects { }` fails to resolve the classpath. Each selected module offers its dependencies to the root under the `aggregate-javadoc-classpath` capability, which nothing else asks for, so an ordinary dependency on a selected module still gets that module's classes.
+
+Anything else a build needs on the task goes through `tasks.named`, which defers the configuration until the task is realized:
 
 ```groovy
 tasks.named("aggregateJavadoc", Javadoc) {

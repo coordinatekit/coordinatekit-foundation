@@ -16,8 +16,16 @@
 package org.coordinatekit.foundation.aggregate.javadoc.gradle;
 
 import org.gradle.api.InvalidUserDataException;
+import org.gradle.api.NamedDomainObjectProvider;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.artifacts.ConfigurationContainer;
+import org.gradle.api.artifacts.ConsumableConfiguration;
+import org.gradle.api.artifacts.DependencyScopeConfiguration;
+import org.gradle.api.artifacts.ProjectDependency;
+import org.gradle.api.attributes.Attribute;
+import org.gradle.api.attributes.AttributeContainer;
+import org.gradle.api.attributes.java.TargetJvmVersion;
 import org.gradle.api.plugins.JavaBasePlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.tasks.SourceSet;
@@ -53,10 +61,20 @@ import java.util.stream.Collectors;
  * also claim the packages of {@code concordance-gradle}.
  *
  * <p>
- * The task's classpath is the compile classpath of every selected project, which also builds any
- * project the selected ones depend on without documenting it. The settings that depend on the
- * selection are read once every project has been evaluated, so realizing the task early, as
- * {@code allprojects { tasks.withType(Javadoc) { } }} does, is safe.
+ * The task's classpath covers everything the selected projects compile against: their
+ * {@code implementation} and {@code compileOnly} dependencies, the BOMs those name through
+ * {@code platform}, and the projects they depend on, which are built but not documented. The root
+ * resolves it through its own {@code aggregateJavadocClasspath} configuration, because a task that
+ * resolved another project's configuration would fail in a parallel build. Each selected project
+ * offers its dependencies as a variant under the {@code aggregate-javadoc-classpath} capability.
+ * Only the root asks for that capability, so a project that depends on a selected one still gets
+ * its {@code apiElements}. The root has to reach every repository those dependencies come from, as
+ * it does when they are declared in {@code allprojects { }} or in
+ * {@code dependencyResolutionManagement}.
+ *
+ * <p>
+ * The settings that depend on the selection are read once every project has been evaluated, so
+ * realizing the task early, as {@code allprojects { tasks.withType(Javadoc) { } }} does, is safe.
  *
  * <p>
  * The title, the links, and the groups come only from the {@code aggregateJavadoc} block. A
@@ -72,6 +90,21 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
      * @param name the module's project name
      */
     record Module(String group, String name) {}
+
+    /**
+     * The feature whose capability marks the variant each selected project offers the root, so that
+     * only the root's dependencies, which ask for it, select that variant.
+     */
+    private static final String CLASSPATH_FEATURE = "aggregate-javadoc-classpath";
+
+    /** The name of the root's configuration that resolves the task's classpath. */
+    private static final String CLASSPATH_NAME = "aggregateJavadocClasspath";
+
+    /** The name of the root's configuration that declares a dependency on each selected project. */
+    private static final String DEPENDENCIES_NAME = "aggregateJavadoc";
+
+    /** The name of the configuration each selected project offers its compile dependencies through. */
+    private static final String ELEMENTS_NAME = "aggregateJavadocClasspathElements";
 
     /** The encoding of the sources, of the pages, and of the character set the pages declare. */
     private static final String ENCODING = "UTF-8";
@@ -116,6 +149,10 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
             }
         });
 
+        NamedDomainObjectProvider<DependencyScopeConfiguration> dependencies = project.getConfigurations()
+                .dependencyScope(DEPENDENCIES_NAME);
+        project.getConfigurations().resolvable(CLASSPATH_NAME, classpath -> classpath.extendsFrom(dependencies.get()));
+
         project.getTasks().register(TASK_NAME, Javadoc.class, task -> configure(project, extension, task));
 
         project.getGradle().projectsEvaluated(gradle -> {
@@ -131,8 +168,10 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
 
     /**
      * Configures the settings of the aggregate task that do not depend on the selection. Runs when the
-     * task is realized, which may be before the subprojects have been evaluated. The sources and the
-     * classpath are read later, when the task graph is built, through a {@link Callable}.
+     * task is realized, which may be before the subprojects have been evaluated. The sources are read
+     * later, when the task graph is built, through a {@link Callable}. The classpath is the root's
+     * {@code aggregateJavadocClasspath} configuration, which {@link #configureClasspath(Project, List)}
+     * fills once the selection is final.
      *
      * @param project the project the plugin is applied to
      * @param extension the block the build configured
@@ -150,14 +189,7 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
                         .map(selectedProject -> mainSourceSet(selectedProject).getAllJava())
                         .toList()
         );
-        task.setClasspath(
-                project.files(
-                        (Callable<Object>) () -> selected.call()
-                                .stream()
-                                .map(selectedProject -> mainSourceSet(selectedProject).getCompileClasspath())
-                                .toList()
-                )
-        );
+        task.setClasspath(project.files(project.getConfigurations().named(CLASSPATH_NAME)));
 
         StandardJavadocDocletOptions options = (StandardJavadocDocletOptions) task.getOptions();
         options.setEncoding(ENCODING);
@@ -167,9 +199,57 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
     }
 
     /**
-     * Configures the settings of the aggregate task that depend on the selection or on the block: the
-     * titles, the links, and the groups. Runs once every project has been evaluated, or when the task
-     * is realized if that comes later.
+     * Wires the root's {@code aggregateJavadocClasspath} configuration to the selected projects. Each
+     * selected project gets an {@code aggregateJavadocClasspathElements} configuration that extends its
+     * {@code implementation} and {@code compileOnly}, carries the attributes of its compile classpath,
+     * and is offered only under the {@code aggregate-javadoc-classpath} capability. The root depends on
+     * each selected project through that capability and requests the same attributes, with the highest
+     * Java version among the selection.
+     *
+     * @param project the project the plugin is applied to
+     * @param selected the selected projects, each applying the {@code java} plugin
+     */
+    private static void configureClasspath(Project project, List<Project> selected) {
+        AttributeContainer requested = project.getConfigurations().getByName(CLASSPATH_NAME).getAttributes();
+        Integer jvmVersion = null;
+        for (Project selectedProject : selected) {
+            SourceSet main = mainSourceSet(selectedProject);
+            ConfigurationContainer configurations = selectedProject.getConfigurations();
+            AttributeContainer compileClasspath = configurations.getByName(main.getCompileClasspathConfigurationName())
+                    .getAttributes();
+
+            ConsumableConfiguration elements = configurations.consumable(ELEMENTS_NAME).get();
+            elements.extendsFrom(
+                    configurations.getByName(main.getImplementationConfigurationName()),
+                    configurations.getByName(main.getCompileOnlyConfigurationName())
+            );
+            compileClasspath.keySet().forEach(key -> copyAttribute(key, compileClasspath, elements.getAttributes()));
+            elements.getOutgoing()
+                    .capability(
+                            selectedProject.getGroup() + ":" + selectedProject.getName() + "-" + CLASSPATH_FEATURE + ":"
+                                    + selectedProject.getVersion()
+                    );
+
+            compileClasspath.keySet().forEach(key -> copyAttribute(key, compileClasspath, requested));
+            Integer projectJvmVersion = compileClasspath.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE);
+            if (projectJvmVersion != null && (jvmVersion == null || projectJvmVersion > jvmVersion)) {
+                jvmVersion = projectJvmVersion;
+            }
+
+            ProjectDependency dependency = (ProjectDependency) project.getDependencies()
+                    .project(Map.of("path", selectedProject.getPath()));
+            dependency.capabilities(capabilities -> capabilities.requireFeature(CLASSPATH_FEATURE));
+            project.getDependencies().add(DEPENDENCIES_NAME, dependency);
+        }
+        if (jvmVersion != null) {
+            requested.attribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, jvmVersion);
+        }
+    }
+
+    /**
+     * Configures what depends on the selection or on the block: the titles, the links, the groups, and
+     * the classpath. Runs once every project has been evaluated, or when the task is realized if that
+     * comes later, so a build that never realizes the task adds no configuration to any project.
      *
      * @param project the project the plugin is applied to
      * @param extension the block the build configured
@@ -183,11 +263,28 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
         options.setWindowTitle(title + " API");
         options.setLinks(extension.getLinks().get());
 
-        List<Module> modules = selection(extension).stream()
+        List<Project> selected = selection(extension);
+        List<Module> modules = selected.stream()
                 .map(selectedProject -> new Module(selectedProject.getGroup().toString(), selectedProject.getName()))
                 .toList();
         groups(modules, extension.getWordForms().get())
                 .forEach((label, pattern) -> options.group(label, List.of(pattern)));
+        configureClasspath(project, selected);
+    }
+
+    /**
+     * Copies one attribute from one container to another, if the source has it.
+     *
+     * @param <T> the type of the attribute's value
+     * @param key the attribute to copy
+     * @param source the container to read the value from
+     * @param target the container to write the value to
+     */
+    private static <T> void copyAttribute(Attribute<T> key, AttributeContainer source, AttributeContainer target) {
+        T value = source.getAttribute(key);
+        if (value != null) {
+            target.attribute(key, value);
+        }
     }
 
     /**
