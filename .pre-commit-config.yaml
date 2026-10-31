@@ -8,6 +8,11 @@ repos:
       - id: detect-private-key
       - id: mixed-line-ending
       - id: trailing-whitespace
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.9.10
+    hooks:
+      - id: prettier
+        stages: [pre-commit]
   - repo: https://github.com/python-jsonschema/check-jsonschema
     rev: 0.38.2
     hooks:
@@ -36,12 +41,6 @@ repos:
         args: [--strict]
   - repo: local
     hooks:
-      - id: prettier
-        name: prettier
-        entry: prettier --write --ignore-unknown
-        language: node
-        additional_dependencies: ["prettier@3.7.4"]
-        stages: [pre-commit]
       - id: spotless-apply
         name: Spotless Apply
         entry: ./gradlew spotlessApply
