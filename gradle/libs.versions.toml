@@ -26,7 +26,7 @@ errorprone = "2.50.0"
 errorprone-plugin = "5.1.1"
 gradle-release = "3.2.0"
 nmcp = "1.6.2"
-spotless = "8.10.3"
+spotless = "8.10.4"
 
 [libraries]
 archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
