@@ -187,6 +187,8 @@ The block's `projects` property names the modules the task covers. It defaults t
 
 The task's classpath covers everything the selected modules compile against: their `implementation` and `compileOnly` dependencies, the BOMs those name through `platform(...)`, and the modules they depend on, which are built but not documented. The root project resolves it through its own `aggregateJavadocClasspath` configuration, so the root has to reach every repository those dependencies come from. Repositories declared in `allprojects { }` or in `dependencyResolutionManagement` cover it, and a build that declares them only in `subprojects { }` fails to resolve the classpath. Each selected module offers its dependencies to the root under the `aggregate-javadoc-classpath` capability, which nothing else asks for, so an ordinary dependency on a selected module still gets that module's classes.
 
+The root resolves one graph across every selected module, so conflict resolution happens across modules: if `a` compiles against Guava 31 and `b` against 33, Javadoc sees only 33. Settings a module applies to its own resolution do not reach the classpath, because the root's configuration is the one resolved. That covers a `resolutionStrategy` or `exclude` on the module's `compileClasspath`, `java.consistentResolution`, dependency substitution, and dependency locking.
+
 Anything else a build needs on the task goes through `tasks.named`, which defers the configuration until the task is realized:
 
 ```groovy

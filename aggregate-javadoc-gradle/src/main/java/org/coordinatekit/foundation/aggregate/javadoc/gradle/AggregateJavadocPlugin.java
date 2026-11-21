@@ -73,6 +73,14 @@ import java.util.stream.Collectors;
  * {@code dependencyResolutionManagement}.
  *
  * <p>
+ * The root resolves one graph across every selected project, so conflict resolution happens across
+ * projects: if {@code a} compiles against Guava 31 and {@code b} against 33, Javadoc sees only 33.
+ * Settings a project applies to its own resolution do not reach the classpath, because the root's
+ * configuration is the one resolved. That covers a {@code resolutionStrategy} or {@code exclude} on
+ * the project's {@code compileClasspath}, {@code java.consistentResolution}, dependency
+ * substitution, and dependency locking.
+ *
+ * <p>
  * The settings that depend on the selection are read once every project has been evaluated, so
  * realizing the task early, as {@code allprojects { tasks.withType(Javadoc) { } }} does, is safe.
  *
