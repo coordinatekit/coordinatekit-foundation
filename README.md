@@ -154,7 +154,7 @@ Two annotations grant the exemptions a build cannot express as configuration, an
 
 A multi-module build publishes one set of Javadoc pages, not one per module. The `org.coordinatekit.foundation:aggregate-javadoc-gradle` module publishes a Gradle plugin, under the id `org.coordinatekit.foundation.aggregate-javadoc`, that registers the root project's `aggregateJavadoc` task, so a repository takes the wiring as a plugin instead of copying it into its own build script.
 
-The plugin needs Gradle 8.11 or newer.
+The plugin needs Gradle 8.11 or newer, and fails when it is applied under an older one.
 
 The plugin publishes to Maven Central rather than to the Gradle Plugin Portal, so `settings.gradle` has to name Central among its plugin repositories. For `-SNAPSHOT` versions, see [RELEASE.md](RELEASE.md#consuming-snapshots):
 

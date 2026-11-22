@@ -32,6 +32,7 @@ import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.javadoc.Javadoc;
 import org.gradle.external.javadoc.StandardJavadocDocletOptions;
+import org.gradle.util.GradleVersion;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -128,6 +129,9 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
     /** The id of the plugin whose projects are selected by default. */
     private static final String JAVA_PLUGIN_ID = "java";
 
+    /** The oldest Gradle the plugin runs on, which the README states too. */
+    static final String MINIMUM_GRADLE = "8.11";
+
     /** The name of the task that generates the pages. */
     private static final String TASK_NAME = "aggregateJavadoc";
 
@@ -136,6 +140,7 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
 
     @Override
     public void apply(Project project) {
+        checkGradleVersion(GradleVersion.current());
         project.getPluginManager().apply(JavaBasePlugin.class);
 
         AggregateJavadocExtension extension = project.getExtensions()
@@ -177,6 +182,23 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
                     .named(TASK_NAME, Javadoc.class)
                     .configure(task -> configureSelection(project, extension, task));
         });
+    }
+
+    /**
+     * Fails if the running Gradle is older than the plugin supports, so that an upgrade of the plugin
+     * without one of Gradle ends in a plain message instead of a missing-method error from deep in the
+     * configuration.
+     *
+     * @param running the version of the Gradle running the build
+     * @throws InvalidUserDataException if {@code running} is older than {@link #MINIMUM_GRADLE}
+     */
+    static void checkGradleVersion(GradleVersion running) {
+        if (running.compareTo(GradleVersion.version(MINIMUM_GRADLE)) < 0) {
+            throw new InvalidUserDataException(
+                    "aggregate-javadoc-gradle requires Gradle " + MINIMUM_GRADLE + " or newer, but this build runs"
+                            + " Gradle " + running.getVersion() + "."
+            );
+        }
     }
 
     /**

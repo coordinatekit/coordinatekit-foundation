@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.coordinatekit.foundation.aggregate.javadoc.gradle.AggregateJavadocPlugin.Module;
+import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ProjectDependency;
@@ -35,6 +36,7 @@ import org.gradle.testfixtures.ProjectBuilder;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 import org.gradle.testkit.runner.TaskOutcome;
+import org.gradle.util.GradleVersion;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -460,6 +462,33 @@ class AggregateJavadocPluginTest {
             messages.append(cause.getMessage()).append('\n');
         }
         return messages.toString();
+    }
+
+    @Test
+    void checkGradleVersion__acceptsMinimumAndNewer() {
+        // ARRANGE //
+        GradleVersion minimum = GradleVersion.version(AggregateJavadocPlugin.MINIMUM_GRADLE);
+        GradleVersion newer = GradleVersion.version("99.0");
+
+        // ACT + ASSERT //
+        AggregateJavadocPlugin.checkGradleVersion(minimum);
+        AggregateJavadocPlugin.checkGradleVersion(newer);
+    }
+
+    @Test
+    void checkGradleVersion__failsOnOlderGradle() {
+        // ARRANGE //
+        GradleVersion older = GradleVersion.version("8.10");
+
+        // ACT //
+        InvalidUserDataException thrown = assertThrows(
+                InvalidUserDataException.class,
+                () -> AggregateJavadocPlugin.checkGradleVersion(older)
+        );
+
+        // ASSERT //
+        assertTrue(thrown.getMessage().contains(AggregateJavadocPlugin.MINIMUM_GRADLE), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains("8.10"), thrown.getMessage());
     }
 
     static Stream<GroupsParameters> groups__labels() {
