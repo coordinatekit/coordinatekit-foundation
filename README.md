@@ -6,7 +6,7 @@ It includes `architecture`, the ArchUnit rules CoordinateKit's Java modules foll
 
 ## Architecture
 
-`FoundationArchitecture` runs CoordinateKit's ArchUnit rules over one module's classes and fails with a single report listing every violation. Nineteen rules are on by default and `PACKAGE_CYCLES` is opt-in. They cover constant naming, deprecated and forbidden APIs, protected members of final classes, the `Impl` suffix and the `I` interface prefix, public fields and records, records named `*Configuration`, generic exceptions in `throws` clauses, `System.out` and `System.err`, utility classes, logger naming, the visibility and disabling of tests, and picocli commands, options, and mixins. The picocli and SLF4J rules match their types by name, so a module needs neither library. The `Rule` enum lists every rule with what it checks. Add the module as a test dependency, which brings ArchUnit with it.
+`FoundationArchitecture` runs CoordinateKit's ArchUnit rules over one module's classes and fails with a single report listing every violation. Nineteen rules are on by default and `PACKAGE_CYCLES` is opt-in. They cover constant naming, deprecated and forbidden APIs, protected members of final classes, the `Impl` suffix and the `I` interface prefix, public fields, records in the public API, records named `*Configuration`, generic exceptions in `throws` clauses, `System.out` and `System.err`, utility classes, logger naming, the visibility and disabling of tests, and picocli commands, options, and mixins. The picocli and SLF4J rules match their types by name, so a module needs neither library. The `Rule` enum lists every rule with what it checks. Add the module as a test dependency, which brings ArchUnit with it.
 
 ```groovy
 dependencies {
@@ -31,7 +31,7 @@ The builder adjusts what the check examines. `exclude` removes classes from one 
 FoundationArchitecture.builder(ArchitectureTest.class)
         .exclude(Rule.SYSTEM_STREAMS, Main.class)
         .excludeNamespace("com.example.widgets.benchmark..")
-        .disable(Rule.PUBLIC_RECORDS, "records are package-private by design here")
+        .disable(Rule.PUBLIC_API_RECORDS, "records are package-private by design here")
         .enable(Rule.PACKAGE_CYCLES)
         .commandVersionProvider("com.example.cli.ExampleVersionProvider")
         .build()

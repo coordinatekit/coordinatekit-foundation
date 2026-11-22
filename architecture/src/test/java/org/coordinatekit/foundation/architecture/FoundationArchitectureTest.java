@@ -77,7 +77,7 @@ class FoundationArchitectureTest {
     private static final String PICOCLI_COMMANDS_CONFIGURED = PicocliRules
             .picocliCommands(FixtureVersionProvider.class.getName())
             .getDescription();
-    private static final String PUBLIC_RECORDS = JavaRules.publicRecords().getDescription();
+    private static final String PUBLIC_API_RECORDS = JavaRules.publicApiRecords().getDescription();
     private static final String SYSTEM_STREAMS = JavaRules.systemStreams().getDescription();
     private static final String TEST_CLASS_VISIBILITY = JUnitRules.testClassVisibility().getDescription();
 
@@ -146,7 +146,7 @@ class FoundationArchitectureTest {
 
         // ASSERT //
         assertTrue(message.startsWith("Found 3 architecture violations for 3 rules"), message);
-        assertTrue(message.contains("Rule: " + PUBLIC_RECORDS), message);
+        assertTrue(message.contains("Rule: " + PUBLIC_API_RECORDS), message);
         assertTrue(message.contains("Rule: file scan\n\tjava.lang.IllegalStateException: scan failed"), message);
         assertTrue(message.contains("Rule: later check\n\tfound stray.txt"), message);
     }
@@ -262,13 +262,13 @@ class FoundationArchitectureTest {
         String message = failure(architecture, Fixtures.of(PrintingRecord.class), Fixtures.of(PublicClassTest.class));
 
         // ASSERT //
-        int publicRecords = message.indexOf("Rule: " + PUBLIC_RECORDS);
+        int publicApiRecords = message.indexOf("Rule: " + PUBLIC_API_RECORDS);
         int systemStreams = message.indexOf("Rule: " + SYSTEM_STREAMS);
         int testClassVisibility = message.indexOf("Rule: " + TEST_CLASS_VISIBILITY);
         int addedRule = message.indexOf("Rule: " + ADDED_RULE_DESCRIPTION);
         int addedCheck = message.indexOf("Rule: an added check");
-        assertTrue(0 < publicRecords, message);
-        assertTrue(publicRecords < systemStreams, message);
+        assertTrue(0 < publicApiRecords, message);
+        assertTrue(publicApiRecords < systemStreams, message);
         assertTrue(systemStreams < testClassVisibility, message);
         assertTrue(testClassVisibility < addedRule, message);
         assertTrue(addedRule < addedCheck, message);
@@ -350,7 +350,7 @@ class FoundationArchitectureTest {
                         "each rule reads its own set",
                         List.of(PublicRecord.class),
                         List.of(PublicClassTest.class),
-                        List.of(PUBLIC_RECORDS, TEST_CLASS_VISIBILITY),
+                        List.of(PUBLIC_API_RECORDS, TEST_CLASS_VISIBILITY),
                         List.of(SYSTEM_STREAMS)
                 ),
                 new ScopeParameters(
@@ -358,14 +358,14 @@ class FoundationArchitectureTest {
                         List.of(),
                         List.of(PublicRecord.class, SystemOutPrinter.class),
                         List.of(),
-                        List.of(PUBLIC_RECORDS, SYSTEM_STREAMS, TEST_CLASS_VISIBILITY)
+                        List.of(PUBLIC_API_RECORDS, SYSTEM_STREAMS, TEST_CLASS_VISIBILITY)
                 ),
                 new ScopeParameters(
                         "a test violator in the production set is not seen",
                         List.of(PublicClassTest.class),
                         List.of(),
                         List.of(),
-                        List.of(PUBLIC_RECORDS, SYSTEM_STREAMS, TEST_CLASS_VISIBILITY)
+                        List.of(PUBLIC_API_RECORDS, SYSTEM_STREAMS, TEST_CLASS_VISIBILITY)
                 )
         );
     }
@@ -410,7 +410,7 @@ class FoundationArchitectureTest {
 
         // ASSERT //
         assertTrue(message.startsWith("Found 3 architecture violations for 3 rules"), message);
-        assertTrue(message.contains("\n\nRule: " + PUBLIC_RECORDS + "\n\t"), message);
+        assertTrue(message.contains("\n\nRule: " + PUBLIC_API_RECORDS + "\n\t"), message);
         assertTrue(message.contains("\n\nRule: " + SYSTEM_STREAMS + "\n\t"), message);
         assertTrue(message.contains("\n\nRule: " + TEST_CLASS_VISIBILITY + "\n\t"), message);
         assertTrue(message.contains(PrintingRecord.class.getName()), message);
@@ -428,7 +428,7 @@ class FoundationArchitectureTest {
 
         // ASSERT //
         assertDoesNotThrow(() -> outsider.check(Fixtures.of(PublicRecord.class), Fixtures.of(PublicClassTest.class)));
-        assertTrue(insiderMessage.contains(PUBLIC_RECORDS), insiderMessage);
+        assertTrue(insiderMessage.contains(PUBLIC_API_RECORDS), insiderMessage);
     }
 
     @Test
@@ -440,7 +440,7 @@ class FoundationArchitectureTest {
         String message = failure(architecture, Fixtures.of(PublicRecord.class), Fixtures.of());
 
         // ASSERT //
-        assertTrue(message.contains("Rule: " + PUBLIC_RECORDS), message);
+        assertTrue(message.contains("Rule: " + PUBLIC_API_RECORDS), message);
         assertTrue(message.contains(PublicRecord.class.getName()), message);
     }
 
@@ -515,34 +515,34 @@ class FoundationArchitectureTest {
         // ACT //
         IllegalArgumentException thrown = assertThrows(
                 IllegalArgumentException.class,
-                () -> builder.disable(Rule.PUBLIC_RECORDS, parameters.reason()),
+                () -> builder.disable(Rule.PUBLIC_API_RECORDS, parameters.reason()),
                 parameters.name()
         );
 
         // ASSERT //
-        assertEquals("A reason is required to disable PUBLIC_RECORDS", thrown.getMessage(), parameters.name());
+        assertEquals("A reason is required to disable PUBLIC_API_RECORDS", thrown.getMessage(), parameters.name());
     }
 
     @Test
     void disable__silencesOnlyThatRule() {
         // ARRANGE //
         FoundationArchitecture architecture = newBuilder()
-                .disable(Rule.PUBLIC_RECORDS, "the records are the wire format")
+                .disable(Rule.PUBLIC_API_RECORDS, "the records are the wire format")
                 .build();
 
         // ACT //
         String message = failure(architecture, Fixtures.of(PrintingRecord.class), Fixtures.of());
 
         // ASSERT //
-        assertFalse(message.contains(PUBLIC_RECORDS), message);
+        assertFalse(message.contains(PUBLIC_API_RECORDS), message);
         assertTrue(message.contains(SYSTEM_STREAMS), message);
     }
 
     @Test
     void disable__thenEnableStaysDisabled() {
         // ARRANGE //
-        FoundationArchitecture architecture = newBuilder().disable(Rule.PUBLIC_RECORDS, "wire format")
-                .enable(Rule.PUBLIC_RECORDS)
+        FoundationArchitecture architecture = newBuilder().disable(Rule.PUBLIC_API_RECORDS, "wire format")
+                .enable(Rule.PUBLIC_API_RECORDS)
                 .build();
 
         // ACT //
@@ -572,13 +572,13 @@ class FoundationArchitectureTest {
     @Test
     void enable__ruleOnByDefaultIsUnchanged() {
         // ARRANGE //
-        FoundationArchitecture architecture = newBuilder().enable(Rule.PUBLIC_RECORDS).build();
+        FoundationArchitecture architecture = newBuilder().enable(Rule.PUBLIC_API_RECORDS).build();
 
         // ACT //
         String message = failure(architecture, Fixtures.of(PublicRecord.class), Fixtures.of());
 
         // ASSERT //
-        assertTrue(message.contains(PUBLIC_RECORDS), message);
+        assertTrue(message.contains(PUBLIC_API_RECORDS), message);
     }
 
     @Test
@@ -589,7 +589,7 @@ class FoundationArchitectureTest {
         // ACT //
         IllegalArgumentException thrown = assertThrows(
                 IllegalArgumentException.class,
-                () -> builder.exclude(Rule.PUBLIC_RECORDS, "a.*.B")
+                () -> builder.exclude(Rule.PUBLIC_API_RECORDS, "a.*.B")
         );
 
         // ASSERT //
@@ -600,13 +600,14 @@ class FoundationArchitectureTest {
     @Test
     void exclude__byClassRemovesViolationForThatRuleOnly() {
         // ARRANGE //
-        FoundationArchitecture architecture = newBuilder().exclude(Rule.PUBLIC_RECORDS, PrintingRecord.class).build();
+        FoundationArchitecture architecture = newBuilder().exclude(Rule.PUBLIC_API_RECORDS, PrintingRecord.class)
+                .build();
 
         // ACT //
         String message = failure(architecture, Fixtures.of(PrintingRecord.class), Fixtures.of());
 
         // ASSERT //
-        assertFalse(message.contains("Rule: " + PUBLIC_RECORDS), message);
+        assertFalse(message.contains("Rule: " + PUBLIC_API_RECORDS), message);
         assertTrue(message.contains("Rule: " + SYSTEM_STREAMS), message);
         assertTrue(message.contains(PrintingRecord.class.getName()), message);
     }
@@ -614,25 +615,26 @@ class FoundationArchitectureTest {
     @Test
     void exclude__byNameRemovesViolationForThatRuleOnly() {
         // ARRANGE //
-        FoundationArchitecture architecture = newBuilder().exclude(Rule.PUBLIC_RECORDS, PrintingRecord.class.getName())
+        FoundationArchitecture architecture = newBuilder()
+                .exclude(Rule.PUBLIC_API_RECORDS, PrintingRecord.class.getName())
                 .build();
 
         // ACT //
         String message = failure(architecture, Fixtures.of(PrintingRecord.class), Fixtures.of());
 
         // ASSERT //
-        assertFalse(message.contains("Rule: " + PUBLIC_RECORDS), message);
+        assertFalse(message.contains("Rule: " + PUBLIC_API_RECORDS), message);
         assertTrue(message.contains("Rule: " + SYSTEM_STREAMS), message);
     }
 
     @Test
     void exclude__disabledRuleIsIgnored() {
         // ARRANGE //
-        FoundationArchitecture.Builder builder = newBuilder().disable(Rule.PUBLIC_RECORDS, "wire format");
+        FoundationArchitecture.Builder builder = newBuilder().disable(Rule.PUBLIC_API_RECORDS, "wire format");
 
         // ACT //
         FoundationArchitecture architecture = assertDoesNotThrow(
-                () -> builder.exclude(Rule.PUBLIC_RECORDS, PublicRecord.class.getName()).build()
+                () -> builder.exclude(Rule.PUBLIC_API_RECORDS, PublicRecord.class.getName()).build()
         );
 
         // ASSERT //

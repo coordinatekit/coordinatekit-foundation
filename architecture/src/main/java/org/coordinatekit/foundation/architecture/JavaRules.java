@@ -22,7 +22,6 @@ import static com.tngtech.archunit.lang.conditions.ArchConditions.beFinal;
 import static com.tngtech.archunit.lang.conditions.ArchConditions.declareThrowableOfType;
 import static com.tngtech.archunit.lang.conditions.ArchConditions.haveOnlyPrivateConstructors;
 import static com.tngtech.archunit.lang.conditions.ArchConditions.not;
-import static com.tngtech.archunit.lang.conditions.ArchConditions.notBePublic;
 import static com.tngtech.archunit.lang.conditions.ArchConditions.notBeRecords;
 import static com.tngtech.archunit.lang.conditions.ArchPredicates.are;
 import static com.tngtech.archunit.lang.conditions.ArchPredicates.have;
@@ -50,6 +49,7 @@ import com.tngtech.archunit.lang.SimpleConditionEvent;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -342,6 +342,38 @@ final class JavaRules {
     }
 
     /**
+     * Creates the rule behind {@link Rule#PUBLIC_API_RECORDS}.
+     *
+     * <p>
+     * A record is judged by whether it can be reached, not by its own flag, so a record nested in a
+     * package-private interface passes although Java makes it public, and a protected record nested in
+     * a public class that is not final fails. Inheritance is not followed: a public class that
+     * implements a package-private interface exposes the interface's nested records under its own name,
+     * and the rule does not see that.
+     *
+     * @return a rule that fails for every record that code outside its package can reach
+     */
+    static ArchRule publicApiRecords() {
+        return classes().that(are(JavaClass.Predicates.RECORDS))
+                .should(new ArchCondition<>("not be part of the public API") {
+                    @Override
+                    public void check(JavaClass item, ConditionEvents events) {
+                        if (reachableOutsidePackage(item)) {
+                            events.add(
+                                    SimpleConditionEvent.violated(
+                                            item,
+                                            item.getDescription() + " is part of the public API in "
+                                                    + item.getSourceCodeLocation()
+                                    )
+                            );
+                        }
+                    }
+                })
+                .as("Records should not be part of the public API")
+                .allowEmptyShould(true);
+    }
+
+    /**
      * Creates the rule behind {@link Rule#PUBLIC_FIELDS}.
      *
      * <p>
@@ -362,15 +394,23 @@ final class JavaRules {
     }
 
     /**
-     * Creates the rule behind {@link Rule#PUBLIC_RECORDS}.
+     * Returns whether code outside the type's package can name it, following the enclosing classes up
+     * to the top-level one.
      *
-     * @return a rule that fails for every public record
+     * <p>
+     * A public level always counts. A protected level counts when the class enclosing it is not final,
+     * because only a subclass can reach a protected type. Any other modifier stops the walk.
+     *
+     * @param type the record, or one of the classes enclosing it
+     * @return {@code true} when the type and every class enclosing it can be reached from another
+     *         package
      */
-    static ArchRule publicRecords() {
-        return classes().that(are(JavaClass.Predicates.RECORDS))
-                .should(notBePublic())
-                .as("Records should not be public")
-                .allowEmptyShould(true);
+    private static boolean reachableOutsidePackage(JavaClass type) {
+        Set<JavaModifier> modifiers = type.getModifiers();
+        Optional<JavaClass> enclosing = type.getEnclosingClass();
+        boolean reachable = modifiers.contains(JavaModifier.PUBLIC) || (modifiers.contains(JavaModifier.PROTECTED)
+                && enclosing.filter(outer -> !outer.getModifiers().contains(JavaModifier.FINAL)).isPresent());
+        return reachable && enclosing.map(JavaRules::reachableOutsidePackage).orElse(true);
     }
 
     /**
