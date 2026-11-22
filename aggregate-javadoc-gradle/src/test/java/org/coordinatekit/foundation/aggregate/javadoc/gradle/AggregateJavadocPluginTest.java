@@ -22,15 +22,21 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.coordinatekit.foundation.aggregate.javadoc.gradle.AggregateJavadocPlugin.Module;
+import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.Project;
+import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.ProjectDependency;
+import org.gradle.api.attributes.java.TargetJvmVersion;
 import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.project.ProjectInternal;
+import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.api.tasks.javadoc.Javadoc;
 import org.gradle.external.javadoc.StandardJavadocDocletOptions;
 import org.gradle.testfixtures.ProjectBuilder;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 import org.gradle.testkit.runner.TaskOutcome;
+import org.gradle.util.GradleVersion;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -40,7 +46,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -52,6 +57,7 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.tools.JavaCompiler;
@@ -59,20 +65,30 @@ import javax.tools.ToolProvider;
 
 /**
  * Unit and functional tests for {@link AggregateJavadocPlugin}. The defaults, the task's
- * configuration, and the failure a build gets for leaving out its title are read off a
- * {@link ProjectBuilder} project, and the ordering of the module groups is checked on the pure
- * function that computes it. What only a real Javadoc run can show is covered by two TestKit
- * builds. {@link #apply__groupsPackagesByModule} shows that the groups sort each module's packages
- * onto its own tab and that a module outside the selection is built but not documented.
- * {@link #apply__resolvesClasspathInParallelBuild} shows that the classpath carries every kind of
- * compile dependency and resolves in a parallel build, and that a project depending on a selected
- * one still compiles against that project's classes.
+ * configuration, the classpath wiring, and the failure a build gets for leaving out its title are
+ * read off a {@link ProjectBuilder} project, and the ordering of the module groups is checked on
+ * the pure function that computes it. For the classpath wiring, that means the root requests the
+ * highest Java version across the selection, and that no selected project gets a configuration and
+ * the root declares no dependency until the task is realized.
  *
  * <p>
- * The fixture build applies the plugin through {@code plugins { id ... }} and
- * {@code withPluginClasspath()}, so it also exercises the descriptor {@code java-gradle-plugin}
- * generates. Its root build realizes the task early through {@code allprojects { tasks.withType }},
- * the idiom that reads the selection before the subprojects are evaluated.
+ * What only a real build can show is covered by TestKit builds.
+ * {@link #apply__groupsPackagesByModule} shows that the groups sort each module's packages onto its
+ * own tab and that a module outside the selection is built but not documented.
+ * {@link #apply__carriesMainSourceSetFeatureDependencies} shows that the classpath carries the
+ * dependencies of a feature variant on the main source set.
+ * {@link #apply__resolvesClasspathInParallelBuild} shows that the classpath carries every kind of
+ * compile dependency, and that a project depending on a selected one still compiles against that
+ * project's classes. It also shows that the classpath resolves in a parallel build, once with the
+ * configuration cache off, where the task resolves it at execution while other projects' tasks run,
+ * and once with the cache on, where Gradle resolves it as the cache entry is stored.
+ *
+ * <p>
+ * Both fixture builds apply the plugin through {@code plugins { id ... }} and
+ * {@code withPluginClasspath()}, so they also exercise the descriptor {@code java-gradle-plugin}
+ * generates. The root build of {@link #writeFixture} realizes the task early through
+ * {@code allprojects { tasks.withType }}, the idiom that reads the selection before the subprojects
+ * are evaluated.
  */
 class AggregateJavadocPluginTest {
     /**
@@ -90,12 +106,73 @@ class AggregateJavadocPluginTest {
             List<String> expected
     ) {}
 
+    /**
+     * One run of the parallel fixture build.
+     *
+     * @param name what the case shows
+     * @param arguments the command line the fixture build runs with
+     */
+    private record ParallelBuildParameters(String name, List<String> arguments) {}
+
     /** The id the plugin is applied under. */
     private static final String PLUGIN_ID = "org.coordinatekit.foundation.aggregate-javadoc";
 
     /** Matches one tab button of the generated index, capturing the tab's number and its label. */
     private static final Pattern TAB = Pattern
             .compile("<button id=\"all-packages-table-tab(\\d+)\"[^>]*>([^<]*)</button>");
+
+    @Test
+    void apply__carriesMainSourceSetFeatureDependencies(@TempDir Path directory, @TempDir Path classes)
+            throws IOException {
+        // ARRANGE //
+        writeFeatureFixture(directory, classes);
+        GradleRunner runner = GradleRunner.create()
+                .withProjectDir(directory.toFile())
+                .withPluginClasspath()
+                .withArguments("aggregateJavadoc");
+
+        // ACT //
+        BuildResult result = runner.build();
+
+        // ASSERT //
+        assertNotNull(result.task(":aggregateJavadoc"), result.getOutput());
+        assertEquals(TaskOutcome.SUCCESS, result.task(":aggregateJavadoc").getOutcome(), result.getOutput());
+        assertTrue(Files.exists(directory.resolve("build/docs/aggregateJavadoc/fixture/app/App.html")));
+    }
+
+    @Test
+    void apply__configuresClasspathOnlyWhenRealized() {
+        // ARRANGE //
+        Project project = ProjectBuilder.builder().build();
+        Project a = subproject(project, "a");
+        Project b = subproject(project, "b");
+        project.getPluginManager().apply(PLUGIN_ID);
+        project.getExtensions().getByType(AggregateJavadocExtension.class).getTitle().set("Example");
+        Configuration scope = project.getConfigurations().getByName("aggregateJavadoc");
+
+        // ACT //
+        projectsEvaluated(project);
+        List<String> elementsBefore = Stream.of(a, b)
+                .filter(child -> child.getConfigurations().findByName("aggregateJavadocClasspathElements") != null)
+                .map(Project::getPath)
+                .toList();
+        List<?> scopeBefore = List.copyOf(scope.getDependencies());
+        project.getTasks().getByName("aggregateJavadoc");
+
+        // ASSERT //
+        assertEquals(List.of(), elementsBefore, "no selected project should be configured before realization");
+        assertEquals(List.of(), scopeBefore, "the root should declare no dependency before realization");
+        assertNotNull(a.getConfigurations().findByName("aggregateJavadocClasspathElements"));
+        assertNotNull(b.getConfigurations().findByName("aggregateJavadocClasspathElements"));
+        assertEquals(
+                Set.of(":a", ":b"),
+                scope.getDependencies()
+                        .stream()
+                        .filter(ProjectDependency.class::isInstance)
+                        .map(dependency -> ((ProjectDependency) dependency).getPath())
+                        .collect(Collectors.toSet())
+        );
+    }
 
     @Test
     void apply__configuresTaskFromExtension(@TempDir Path directory) throws IOException {
@@ -289,31 +366,86 @@ class AggregateJavadocPluginTest {
     }
 
     @Test
-    void apply__resolvesClasspathInParallelBuild(@TempDir Path directory, @TempDir Path classes) throws IOException {
+    void apply__requestsHighestJvmVersion() {
+        // ARRANGE //
+        Project project = ProjectBuilder.builder().build();
+        for (Map.Entry<String, Integer> release : List.of(Map.entry("a", 11), Map.entry("b", 17), Map.entry("c", 11))) {
+            subproject(project, release.getKey()).getTasks()
+                    .named(
+                            "compileJava",
+                            JavaCompile.class,
+                            task -> task.getOptions().getRelease().set(release.getValue())
+                    );
+        }
+        project.getPluginManager().apply(PLUGIN_ID);
+        project.getExtensions().getByType(AggregateJavadocExtension.class).getTitle().set("Example");
+
+        // ACT //
+        project.getTasks().getByName("aggregateJavadoc");
+        projectsEvaluated(project);
+
+        // ASSERT //
+        assertEquals(
+                17,
+                project.getConfigurations()
+                        .getByName("aggregateJavadocClasspath")
+                        .getAttributes()
+                        .getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE)
+        );
+    }
+
+    static Stream<ParallelBuildParameters> apply__resolvesClasspathInParallelBuild() {
+        return Stream.of(
+                new ParallelBuildParameters(
+                        "classpath resolved at execution",
+                        List.of("aggregateJavadoc", ":app:compileJava", "--parallel", "--no-configuration-cache")
+                ),
+                new ParallelBuildParameters(
+                        "classpath resolved as the configuration cache entry is stored",
+                        List.of("aggregateJavadoc", ":app:compileJava", "--parallel", "--configuration-cache")
+                )
+        );
+    }
+
+    @MethodSource
+    @ParameterizedTest
+    void apply__resolvesClasspathInParallelBuild(
+            ParallelBuildParameters parameters,
+            @TempDir Path directory,
+            @TempDir Path classes
+    ) throws IOException {
         // ARRANGE //
         writeParallelFixture(directory, classes);
         GradleRunner runner = GradleRunner.create()
                 .withProjectDir(directory.toFile())
                 .withPluginClasspath()
-                .withArguments("aggregateJavadoc", ":app:compileJava", "--parallel", "--configuration-cache");
+                .withArguments(parameters.arguments());
 
         // ACT //
         BuildResult first = runner.build();
         BuildResult second = runner.build();
 
         // ASSERT //
-        assertNotNull(first.task(":aggregateJavadoc"), first.getOutput());
-        assertEquals(TaskOutcome.SUCCESS, first.task(":aggregateJavadoc").getOutcome());
+        assertNotNull(first.task(":aggregateJavadoc"), first.getOutput() + "\n" + parameters.name());
+        assertEquals(TaskOutcome.SUCCESS, first.task(":aggregateJavadoc").getOutcome(), parameters.name());
         assertEquals(
                 TaskOutcome.SUCCESS,
                 first.task(":app:compileJava").getOutcome(),
-                "a project depending on a selected one should still compile against its classes"
+                "a project depending on a selected one should still compile against its classes: " + parameters.name()
         );
         Path pages = directory.resolve("build/docs/aggregateJavadoc");
-        assertTrue(Files.exists(pages.resolve("fixture/app/App.html")), "the selected module should be documented");
-        assertFalse(Files.exists(pages.resolve("fixture/provided")), "a compileOnly module should not be documented");
-        assertTrue(second.getOutput().contains("Reusing configuration cache"), second.getOutput());
-        assertEquals(TaskOutcome.UP_TO_DATE, second.task(":aggregateJavadoc").getOutcome());
+        assertTrue(
+                Files.exists(pages.resolve("fixture/app/App.html")),
+                "the selected module should be documented: " + parameters.name()
+        );
+        assertFalse(
+                Files.exists(pages.resolve("fixture/provided")),
+                "a compileOnly module should not be documented: " + parameters.name()
+        );
+        if (parameters.arguments().contains("--configuration-cache")) {
+            assertTrue(second.getOutput().contains("Reusing configuration cache"), second.getOutput());
+            assertEquals(TaskOutcome.UP_TO_DATE, second.task(":aggregateJavadoc").getOutcome());
+        }
     }
 
     /**
@@ -330,6 +462,33 @@ class AggregateJavadocPluginTest {
             messages.append(cause.getMessage()).append('\n');
         }
         return messages.toString();
+    }
+
+    @Test
+    void checkGradleVersion__acceptsMinimumAndNewer() {
+        // ARRANGE //
+        GradleVersion minimum = GradleVersion.version(AggregateJavadocPlugin.MINIMUM_GRADLE);
+        GradleVersion newer = GradleVersion.version("99.0");
+
+        // ACT + ASSERT //
+        AggregateJavadocPlugin.checkGradleVersion(minimum);
+        AggregateJavadocPlugin.checkGradleVersion(newer);
+    }
+
+    @Test
+    void checkGradleVersion__failsOnOlderGradle() {
+        // ARRANGE //
+        GradleVersion older = GradleVersion.version("8.10");
+
+        // ACT //
+        InvalidUserDataException thrown = assertThrows(
+                InvalidUserDataException.class,
+                () -> AggregateJavadocPlugin.checkGradleVersion(older)
+        );
+
+        // ASSERT //
+        assertTrue(thrown.getMessage().contains(AggregateJavadocPlugin.MINIMUM_GRADLE), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains("8.10"), thrown.getMessage());
     }
 
     static Stream<GroupsParameters> groups__labels() {
@@ -444,6 +603,76 @@ class AggregateJavadocPluginTest {
     }
 
     /**
+     * Writes a consumer build whose one selected module, {@code app}, declares a feature variant on its
+     * main source set and returns a type from that feature's dependency. The feature's configurations
+     * feed the module's {@code compileClasspath} but are not reached through {@code implementation} or
+     * {@code compileOnly}, so the task fails with a missing symbol if the classpath leaves them out.
+     * The dependency lives in a file repository under {@code repository}, so the build runs offline.
+     *
+     * @param directory the project directory to write into
+     * @param classes a scratch directory to compile the external module's type into
+     * @throws IOException if the fixture cannot be written
+     */
+    private static void writeFeatureFixture(Path directory, Path classes) throws IOException {
+        Files.writeString(directory.resolve("settings.gradle"), """
+                rootProject.name = "fixture"
+                include "app"
+                """);
+        writeGradleProperties(directory);
+        Files.writeString(directory.resolve("build.gradle"), """
+                plugins {
+                    id "org.coordinatekit.foundation.aggregate-javadoc"
+                }
+
+                allprojects {
+                    group = "fixture"
+                    repositories {
+                        maven { url = rootProject.file("repository").toURI() }
+                    }
+                }
+
+                aggregateJavadoc {
+                    projects = [project(":app")]
+                    title = "Fixture"
+                }
+                """);
+        writeRepository(directory.resolve("repository"), classes);
+
+        Files.createDirectories(directory.resolve("app"));
+        Files.writeString(directory.resolve("app/build.gradle"), """
+                plugins { id "java-library" }
+
+                java {
+                    registerFeature("mongo") {
+                        usingSourceSet(sourceSets.main)
+                    }
+                }
+
+                dependencies {
+                    mongoImplementation "fixture.external:lib:1.0"
+                }
+                """);
+        writeSource(directory, "app", "fixture.app", "App", """
+                import fixture.external.Lib;
+
+                /** The documented type whose signature reaches a main source set feature's dependency. */
+                public class App {
+                    /** Creates the type. */
+                    public App() {}
+
+                    /**
+                     * Returns the type from the feature's dependency.
+                     *
+                     * @return a new external type
+                     */
+                    public Lib lib() {
+                        return new Lib();
+                    }
+                }
+                """);
+    }
+
+    /**
      * Writes a consumer build with three modules, {@code a}, {@code a-b}, and {@code support}, where
      * {@code a} depends on {@code support} and only the first two are selected. Each module applies
      * {@code java-library} in its own build script, and the root build realizes the task from an
@@ -549,6 +778,12 @@ class AggregateJavadocPluginTest {
      * compilation fails if its dependency on {@code core} selects anything but {@code core}'s classes.
      *
      * <p>
+     * The third selected module, {@code extra}, holds one documented type that nothing depends on, and
+     * no test names it on the command line. Only the aggregate task resolves its classpath, so a task
+     * that resolved another project's configuration in a parallel build would have no earlier
+     * resolution to lean on.
+     *
+     * <p>
      * The external module and the BOM live in a file repository under {@code repository}, so the build
      * runs offline. Every project, the root included, declares that repository.
      *
@@ -559,7 +794,7 @@ class AggregateJavadocPluginTest {
     private static void writeParallelFixture(Path directory, Path classes) throws IOException {
         Files.writeString(directory.resolve("settings.gradle"), """
                 rootProject.name = "fixture"
-                include "app", "core", "provided"
+                include "app", "core", "extra", "provided"
                 """);
         writeGradleProperties(directory);
         Files.writeString(directory.resolve("build.gradle"), """
@@ -575,30 +810,40 @@ class AggregateJavadocPluginTest {
                 }
 
                 aggregateJavadoc {
-                    projects = [project(":app"), project(":core")]
+                    projects = [project(":app"), project(":core"), project(":extra")]
                     title = "Fixture"
                 }
                 """);
         writeRepository(directory.resolve("repository"), classes);
 
-        for (String module : List.of("app", "core", "provided")) {
+        for (String module : List.of("core", "extra", "provided")) {
             Files.createDirectories(directory.resolve(module));
             Files.writeString(directory.resolve(module).resolve("build.gradle"), "plugins { id \"java-library\" }\n");
         }
+        Files.createDirectories(directory.resolve("app"));
         Files.writeString(directory.resolve("app/build.gradle"), """
+                plugins { id "java-library" }
+
                 dependencies {
                     implementation platform("fixture.external:bom:1.0")
                     implementation "fixture.external:lib"
                     implementation project(":core")
                     compileOnly project(":provided")
                 }
-                """, StandardOpenOption.APPEND);
+                """);
 
         writeSource(directory, "core", "fixture.core", "Core", """
                 /** A selected type the first one depends on. */
                 public class Core {
                     /** Creates the type. */
                     public Core() {}
+                }
+                """);
+        writeSource(directory, "extra", "fixture.extra", "Extra", """
+                /** A selected type that nothing else in the build needs. */
+                public class Extra {
+                    /** Creates the type. */
+                    public Extra() {}
                 }
                 """);
         writeSource(directory, "provided", "fixture.provided", "Provided", """

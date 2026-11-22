@@ -19,6 +19,7 @@ import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.NamedDomainObjectProvider;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.ConsumableConfiguration;
 import org.gradle.api.artifacts.DependencyScopeConfiguration;
@@ -31,6 +32,7 @@ import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.javadoc.Javadoc;
 import org.gradle.external.javadoc.StandardJavadocDocletOptions;
+import org.gradle.util.GradleVersion;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -39,6 +41,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
@@ -61,16 +64,27 @@ import java.util.stream.Collectors;
  * also claim the packages of {@code concordance-gradle}.
  *
  * <p>
- * The task's classpath covers everything the selected projects compile against: their
- * {@code implementation} and {@code compileOnly} dependencies, the BOMs those name through
- * {@code platform}, and the projects they depend on, which are built but not documented. The root
- * resolves it through its own {@code aggregateJavadocClasspath} configuration, because a task that
- * resolved another project's configuration would fail in a parallel build. Each selected project
- * offers its dependencies as a variant under the {@code aggregate-javadoc-classpath} capability.
- * Only the root asks for that capability, so a project that depends on a selected one still gets
- * its {@code apiElements}. The root has to reach every repository those dependencies come from, as
- * it does when they are declared in {@code allprojects { }} or in
- * {@code dependencyResolutionManagement}.
+ * The task's classpath carries what the selected projects compile against through their dependency
+ * configurations: everything their {@code compileClasspath} extends, including
+ * {@code implementation}, {@code compileOnly}, and the configurations of a feature variant on the
+ * main source set, the BOMs those name through {@code platform}, and the projects they depend on,
+ * which are built but not documented. Files a build adds straight to a source set's compile
+ * classpath, as in {@code sourceSets.main.compileClasspath += files(...)}, belong to no
+ * configuration and are not carried. The root resolves it through its own
+ * {@code aggregateJavadocClasspath} configuration, because a task that resolved another project's
+ * configuration would fail in a parallel build. Each selected project offers its dependencies as a
+ * variant under the {@code aggregate-javadoc-classpath} capability. Only the root asks for that
+ * capability, so a project that depends on a selected one still gets its {@code apiElements}. The
+ * root has to reach every repository those dependencies come from, as it does when they are
+ * declared in {@code allprojects { }} or in {@code dependencyResolutionManagement}.
+ *
+ * <p>
+ * The root resolves one graph across every selected project, so conflict resolution happens across
+ * projects: if {@code a} compiles against Guava 31 and {@code b} against 33, Javadoc sees only 33.
+ * Settings a project applies to its own resolution do not reach the classpath, because the root's
+ * configuration is the one resolved. That covers a {@code resolutionStrategy} or {@code exclude} on
+ * the project's {@code compileClasspath}, {@code java.consistentResolution}, dependency
+ * substitution, and dependency locking.
  *
  * <p>
  * The settings that depend on the selection are read once every project has been evaluated, so
@@ -115,6 +129,9 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
     /** The id of the plugin whose projects are selected by default. */
     private static final String JAVA_PLUGIN_ID = "java";
 
+    /** The oldest Gradle the plugin runs on, which the README states too. */
+    static final String MINIMUM_GRADLE = "8.11";
+
     /** The name of the task that generates the pages. */
     private static final String TASK_NAME = "aggregateJavadoc";
 
@@ -123,6 +140,7 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
 
     @Override
     public void apply(Project project) {
+        checkGradleVersion(GradleVersion.current());
         project.getPluginManager().apply(JavaBasePlugin.class);
 
         AggregateJavadocExtension extension = project.getExtensions()
@@ -167,6 +185,35 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
     }
 
     /**
+     * Fails if the running Gradle is older than the plugin supports, so that an upgrade of the plugin
+     * without one of Gradle ends in a plain message instead of a missing-method error from deep in the
+     * configuration.
+     *
+     * @param running the version of the Gradle running the build
+     * @throws InvalidUserDataException if {@code running} is older than {@link #MINIMUM_GRADLE}
+     */
+    static void checkGradleVersion(GradleVersion running) {
+        if (running.compareTo(GradleVersion.version(MINIMUM_GRADLE)) < 0) {
+            throw new InvalidUserDataException(
+                    "aggregate-javadoc-gradle requires Gradle " + MINIMUM_GRADLE + " or newer, but this build runs"
+                            + " Gradle " + running.getVersion() + "."
+            );
+        }
+    }
+
+    /**
+     * Reads the attributes of a project's main compile classpath.
+     *
+     * @param project a project that applies the {@code java} plugin
+     * @return the attributes of the project's {@code compileClasspath} configuration
+     */
+    private static AttributeContainer compileClasspathAttributes(Project project) {
+        return project.getConfigurations()
+                .getByName(mainSourceSet(project).getCompileClasspathConfigurationName())
+                .getAttributes();
+    }
+
+    /**
      * Configures the settings of the aggregate task that do not depend on the selection. Runs when the
      * task is realized, which may be before the subprojects have been evaluated. The sources are read
      * later, when the task graph is built, through a {@link Callable}. The classpath is the root's
@@ -200,50 +247,49 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
 
     /**
      * Wires the root's {@code aggregateJavadocClasspath} configuration to the selected projects. Each
-     * selected project gets an {@code aggregateJavadocClasspathElements} configuration that extends its
-     * {@code implementation} and {@code compileOnly}, carries the attributes of its compile classpath,
-     * and is offered only under the {@code aggregate-javadoc-classpath} capability. The root depends on
-     * each selected project through that capability and requests the same attributes, with the highest
-     * Java version among the selection.
+     * selected project gets an {@code aggregateJavadocClasspathElements} configuration that extends
+     * whatever its {@code compileClasspath} extends, which includes {@code implementation},
+     * {@code compileOnly}, and the configurations of a feature variant on the main source set. It
+     * carries the attributes of the compile classpath and is offered only under the
+     * {@code aggregate-javadoc-classpath} capability. The root depends on each selected project through
+     * that capability and requests the same attributes, with the highest Java version among the
+     * selection. Files a build adds straight to the source set's compile classpath belong to no
+     * configuration, so the root cannot reach them and they are not carried.
      *
      * @param project the project the plugin is applied to
      * @param selected the selected projects, each applying the {@code java} plugin
      */
     private static void configureClasspath(Project project, List<Project> selected) {
-        AttributeContainer requested = project.getConfigurations().getByName(CLASSPATH_NAME).getAttributes();
-        Integer jvmVersion = null;
         for (Project selectedProject : selected) {
-            SourceSet main = mainSourceSet(selectedProject);
             ConfigurationContainer configurations = selectedProject.getConfigurations();
-            AttributeContainer compileClasspath = configurations.getByName(main.getCompileClasspathConfigurationName())
-                    .getAttributes();
+            Configuration compileClasspath = configurations
+                    .getByName(mainSourceSet(selectedProject).getCompileClasspathConfigurationName());
 
             ConsumableConfiguration elements = configurations.consumable(ELEMENTS_NAME).get();
-            elements.extendsFrom(
-                    configurations.getByName(main.getImplementationConfigurationName()),
-                    configurations.getByName(main.getCompileOnlyConfigurationName())
-            );
-            compileClasspath.keySet().forEach(key -> copyAttribute(key, compileClasspath, elements.getAttributes()));
+            elements.extendsFrom(compileClasspath.getExtendsFrom().toArray(new Configuration[0]));
+            copyAttributes(compileClasspath.getAttributes(), elements.getAttributes());
             elements.getOutgoing()
                     .capability(
                             selectedProject.getGroup() + ":" + selectedProject.getName() + "-" + CLASSPATH_FEATURE + ":"
                                     + selectedProject.getVersion()
                     );
 
-            compileClasspath.keySet().forEach(key -> copyAttribute(key, compileClasspath, requested));
-            Integer projectJvmVersion = compileClasspath.getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE);
-            if (projectJvmVersion != null && (jvmVersion == null || projectJvmVersion > jvmVersion)) {
-                jvmVersion = projectJvmVersion;
-            }
-
             ProjectDependency dependency = (ProjectDependency) project.getDependencies()
                     .project(Map.of("path", selectedProject.getPath()));
             dependency.capabilities(capabilities -> capabilities.requireFeature(CLASSPATH_FEATURE));
             project.getDependencies().add(DEPENDENCIES_NAME, dependency);
         }
-        if (jvmVersion != null) {
-            requested.attribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, jvmVersion);
-        }
+
+        AttributeContainer requested = project.getConfigurations().getByName(CLASSPATH_NAME).getAttributes();
+        selected.forEach(selectedProject -> copyAttributes(compileClasspathAttributes(selectedProject), requested));
+        selected.stream()
+                .map(
+                        selectedProject -> compileClasspathAttributes(selectedProject)
+                                .getAttribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE)
+                )
+                .filter(Objects::nonNull)
+                .max(Comparator.naturalOrder())
+                .ifPresent(version -> requested.attribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, version));
     }
 
     /**
@@ -285,6 +331,16 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
         if (value != null) {
             target.attribute(key, value);
         }
+    }
+
+    /**
+     * Copies every attribute of one container to another.
+     *
+     * @param source the container to read the values from
+     * @param target the container to write the values to
+     */
+    private static void copyAttributes(AttributeContainer source, AttributeContainer target) {
+        source.keySet().forEach(key -> copyAttribute(key, source, target));
     }
 
     /**

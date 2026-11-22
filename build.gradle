@@ -463,7 +463,7 @@ apply plugin: VersionReferencesPlugin
 // and one that duplicated it was removed. Each module is a jacocoAggregation dependency rather than
 // a reach into its tasks, and the report keeps the name CI reads its XML by. The dependencies are
 // not transitive: every module is listed anyway, and resolving theirs would need the Gradle Plugin
-// Portal, which the root project stays off.
+// Portal, which the root's repositories offer only to aggregateJavadocClasspath.
 dependencies {
     codeProjects.each {
         jacocoAggregation(project(it.path)) {
