@@ -7,7 +7,7 @@ jspecify = "1.0.0"
 # plugin are binary-coupled to these, so update conservatively and move README's "built against"
 # line with them. The build section's unsuffixed versions of the same coordinates run this
 # repository's own linting, so a current Error Prone exercises the check built against the target.
-errorprone-target = "2.51.0"
+errorprone-target = "2.53.0"
 errorprone-plugin-target = "5.1.1"
 
 # implementation — keep current
@@ -22,7 +22,7 @@ junit = "6.1.3"
 picocli = "4.7.7"
 
 # build — keep current
-errorprone = "2.51.0"
+errorprone = "2.53.0"
 errorprone-plugin = "5.2.0"
 gradle-release = "3.2.0"
 nmcp = "1.6.2"
