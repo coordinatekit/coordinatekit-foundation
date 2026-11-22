@@ -656,12 +656,12 @@ class JavaRulesTest {
                 ),
                 new RuleParameters(
                         "a record nested in a package-private interface passes",
-                        List.of(NonPublicFixtures.SEALED_INTERFACE_NESTED_RECORD),
+                        List.of(NonPublicFixtures.PACKAGE_PRIVATE_SEALED_INTERFACE_NESTED),
                         List.of()
                 ),
                 new RuleParameters(
                         "a public record nested in a package-private class passes",
-                        List.of(NonPublicFixtures.RECORD_HOLDER_NESTED_RECORD),
+                        List.of(NonPublicFixtures.PACKAGE_PRIVATE_RECORD_HOLDER_NESTED),
                         List.of()
                 ),
                 new RuleParameters(
@@ -671,22 +671,37 @@ class JavaRulesTest {
                 ),
                 new RuleParameters(
                         "a record two levels inside a package-private class passes",
-                        List.of(NonPublicFixtures.DEEP_RECORD_HOLDER_NESTED_RECORD),
+                        List.of(NonPublicFixtures.PACKAGE_PRIVATE_DEEP_RECORD_HOLDER_MIDDLE_NESTED),
                         List.of()
                 ),
                 new RuleParameters(
                         "a protected record nested in a public class violates",
-                        List.of(NonPublicFixtures.PROTECTED_RECORD_HOLDER_NESTED_RECORD),
-                        List.of(NonPublicFixtures.PROTECTED_RECORD_HOLDER_NESTED_RECORD)
+                        List.of(NonPublicFixtures.PROTECTED_RECORD_HOLDER_NESTED),
+                        List.of(NonPublicFixtures.PROTECTED_RECORD_HOLDER_NESTED)
                 ),
                 new RuleParameters(
                         "a record nested in a protected class violates",
-                        List.of(NonPublicFixtures.PROTECTED_CLASS_RECORD_HOLDER_NESTED_RECORD),
-                        List.of(NonPublicFixtures.PROTECTED_CLASS_RECORD_HOLDER_NESTED_RECORD)
+                        List.of(NonPublicFixtures.PROTECTED_CLASS_RECORD_HOLDER_MIDDLE_NESTED),
+                        List.of(NonPublicFixtures.PROTECTED_CLASS_RECORD_HOLDER_MIDDLE_NESTED)
                 ),
                 new RuleParameters(
                         "a protected record nested in a final class passes",
-                        List.of(NonPublicFixtures.FINAL_PROTECTED_RECORD_HOLDER_NESTED_RECORD),
+                        List.of(NonPublicFixtures.FINAL_PROTECTED_RECORD_HOLDER_NESTED),
+                        List.of()
+                ),
+                new RuleParameters(
+                        "a private record nested in a public class passes",
+                        List.of(NonPublicFixtures.PRIVATE_RECORD_HOLDER_NESTED),
+                        List.of()
+                ),
+                new RuleParameters(
+                        "a public record nested in a private class passes",
+                        List.of(NonPublicFixtures.PRIVATE_RECORD_HOLDER_MIDDLE_NESTED),
+                        List.of()
+                ),
+                new RuleParameters(
+                        "a local record passes",
+                        List.of(NonPublicFixtures.LOCAL_RECORD_HOLDER_LOCAL),
                         List.of()
                 )
         );

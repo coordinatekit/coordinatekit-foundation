@@ -347,15 +347,15 @@ final class JavaRules {
      * <p>
      * A record is judged by whether it can be reached, not by its own flag, so a record nested in a
      * package-private interface passes although Java makes it public, and a protected record nested in
-     * a public class fails. Inheritance is not followed: a public class that implements a
-     * package-private interface exposes the interface's nested records under its own name, and the rule
-     * does not see that.
+     * a public class that is not final fails. Inheritance is not followed: a public class that
+     * implements a package-private interface exposes the interface's nested records under its own name,
+     * and the rule does not see that.
      *
      * @return a rule that fails for every record that code outside its package can reach
      */
     static ArchRule publicApiRecords() {
         return classes().that(are(JavaClass.Predicates.RECORDS))
-                .should(new ArchCondition<>("not be public outside their package") {
+                .should(new ArchCondition<>("not be part of the public API") {
                     @Override
                     public void check(JavaClass item, ConditionEvents events) {
                         if (reachableOutsidePackage(item)) {
