@@ -31,7 +31,7 @@ The builder adjusts what the check examines. `exclude` removes classes from one 
 FoundationArchitecture.builder(ArchitectureTest.class)
         .exclude(Rule.SYSTEM_STREAMS, Main.class)
         .excludeNamespace("com.example.widgets.benchmark..")
-        .disable(Rule.PUBLIC_RECORDS, "records are package-private by design here")
+        .disable(Rule.PUBLIC_API_RECORDS, "records are package-private by design here")
         .enable(Rule.PACKAGE_CYCLES)
         .commandVersionProvider("com.example.cli.ExampleVersionProvider")
         .build()

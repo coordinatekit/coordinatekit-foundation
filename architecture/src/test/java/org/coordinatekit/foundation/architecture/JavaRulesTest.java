@@ -81,6 +81,7 @@ import org.coordinatekit.foundation.architecture.fixtures.ProtectedMethodRecord;
 import org.coordinatekit.foundation.architecture.fixtures.PublicConstructorUtility;
 import org.coordinatekit.foundation.architecture.fixtures.PublicEnumTest;
 import org.coordinatekit.foundation.architecture.fixtures.PublicInstanceField;
+import org.coordinatekit.foundation.architecture.fixtures.PublicInterfaceRecordHolder;
 import org.coordinatekit.foundation.architecture.fixtures.PublicRecord;
 import org.coordinatekit.foundation.architecture.fixtures.PublicStaticField;
 import org.coordinatekit.foundation.architecture.fixtures.ServerConfiguration;
@@ -364,14 +365,14 @@ class JavaRulesTest {
                         List.of("Interfaces should not be prefixed with I")
                 ),
                 new FactoryParameters(
+                        "publicApiRecords",
+                        () -> List.of(JavaRules.publicApiRecords()),
+                        List.of("Records should not be part of the public API")
+                ),
+                new FactoryParameters(
                         "publicFields",
                         () -> List.of(JavaRules.publicFields()),
                         List.of("Fields should not be public unless they are static")
-                ),
-                new FactoryParameters(
-                        "publicRecords",
-                        () -> List.of(JavaRules.publicRecords()),
-                        List.of("Records should not be public")
                 ),
                 new FactoryParameters(
                         "systemStreams",
@@ -634,6 +635,74 @@ class JavaRulesTest {
         );
     }
 
+    static Stream<RuleParameters> publicApiRecords() {
+        return Stream.of(
+                new RuleParameters("public record violates", List.of(PublicRecord.class), List.of(PublicRecord.class)),
+                new RuleParameters(
+                        "package-private record passes",
+                        List.of(NonPublicFixtures.PACKAGE_PRIVATE_RECORD),
+                        List.of()
+                ),
+                new RuleParameters("public class is not a record", List.of(SystemOutPrinter.class), List.of()),
+                new RuleParameters(
+                        "only the public record is named",
+                        List.of(PublicRecord.class, NonPublicFixtures.PACKAGE_PRIVATE_RECORD, SystemOutPrinter.class),
+                        List.of(PublicRecord.class)
+                ),
+                new RuleParameters(
+                        "a record that prints still violates",
+                        List.of(PrintingRecord.class),
+                        List.of(PrintingRecord.class)
+                ),
+                new RuleParameters(
+                        "a record nested in a package-private interface passes",
+                        List.of(NonPublicFixtures.SEALED_INTERFACE_NESTED_RECORD),
+                        List.of()
+                ),
+                new RuleParameters(
+                        "a public record nested in a package-private class passes",
+                        List.of(NonPublicFixtures.RECORD_HOLDER_NESTED_RECORD),
+                        List.of()
+                ),
+                new RuleParameters(
+                        "a record nested in a public interface violates",
+                        List.of(PublicInterfaceRecordHolder.Nested.class),
+                        List.of(PublicInterfaceRecordHolder.Nested.class)
+                ),
+                new RuleParameters(
+                        "a record two levels inside a package-private class passes",
+                        List.of(NonPublicFixtures.DEEP_RECORD_HOLDER_NESTED_RECORD),
+                        List.of()
+                ),
+                new RuleParameters(
+                        "a protected record nested in a public class violates",
+                        List.of(NonPublicFixtures.PROTECTED_RECORD_HOLDER_NESTED_RECORD),
+                        List.of(NonPublicFixtures.PROTECTED_RECORD_HOLDER_NESTED_RECORD)
+                ),
+                new RuleParameters(
+                        "a record nested in a protected class violates",
+                        List.of(NonPublicFixtures.PROTECTED_CLASS_RECORD_HOLDER_NESTED_RECORD),
+                        List.of(NonPublicFixtures.PROTECTED_CLASS_RECORD_HOLDER_NESTED_RECORD)
+                ),
+                new RuleParameters(
+                        "a protected record nested in a final class passes",
+                        List.of(NonPublicFixtures.FINAL_PROTECTED_RECORD_HOLDER_NESTED_RECORD),
+                        List.of()
+                )
+        );
+    }
+
+    @MethodSource
+    @ParameterizedTest
+    void publicApiRecords(RuleParameters parameters) {
+        Fixtures.assertViolators(
+                List.of(JavaRules.publicApiRecords()),
+                parameters.name(),
+                parameters.fixtures(),
+                parameters.violators()
+        );
+    }
+
     static Stream<RuleParameters> publicFields() {
         return Stream.of(
                 new RuleParameters(
@@ -658,39 +727,6 @@ class JavaRulesTest {
     void publicFields(RuleParameters parameters) {
         Fixtures.assertViolators(
                 List.of(JavaRules.publicFields()),
-                parameters.name(),
-                parameters.fixtures(),
-                parameters.violators()
-        );
-    }
-
-    static Stream<RuleParameters> publicRecords() {
-        return Stream.of(
-                new RuleParameters("public record violates", List.of(PublicRecord.class), List.of(PublicRecord.class)),
-                new RuleParameters(
-                        "package-private record passes",
-                        List.of(NonPublicFixtures.PACKAGE_PRIVATE_RECORD),
-                        List.of()
-                ),
-                new RuleParameters("public class is not a record", List.of(SystemOutPrinter.class), List.of()),
-                new RuleParameters(
-                        "only the public record is named",
-                        List.of(PublicRecord.class, NonPublicFixtures.PACKAGE_PRIVATE_RECORD, SystemOutPrinter.class),
-                        List.of(PublicRecord.class)
-                ),
-                new RuleParameters(
-                        "a record that prints still violates",
-                        List.of(PrintingRecord.class),
-                        List.of(PrintingRecord.class)
-                )
-        );
-    }
-
-    @MethodSource
-    @ParameterizedTest
-    void publicRecords(RuleParameters parameters) {
-        Fixtures.assertViolators(
-                List.of(JavaRules.publicRecords()),
                 parameters.name(),
                 parameters.fixtures(),
                 parameters.violators()

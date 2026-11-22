@@ -16,7 +16,7 @@
 package org.coordinatekit.foundation.architecture.fixtures;
 
 /**
- * A public record that calls {@code System.out}: violates {@code PUBLIC_RECORDS} and
+ * A public record that calls {@code System.out}: violates {@code PUBLIC_API_RECORDS} and
  * {@code SYSTEM_STREAMS}.
  */
 public record PrintingRecord(String value) {

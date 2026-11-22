@@ -15,5 +15,5 @@
  */
 package org.coordinatekit.foundation.architecture.fixtures;
 
-/** A public record that prints nothing: violates {@code PUBLIC_RECORDS} only. */
+/** A public record that prints nothing: violates {@code PUBLIC_API_RECORDS} only. */
 public record PublicRecord(String value) {}

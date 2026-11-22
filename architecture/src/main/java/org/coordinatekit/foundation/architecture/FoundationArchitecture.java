@@ -163,8 +163,8 @@ public final class FoundationArchitecture {
             case PICOCLI_COMMANDS -> List.of(PicocliRules.picocliCommands(commandVersionProvider));
             case PICOCLI_ENVIRONMENT_OPTIONS -> List.of(PicocliRules.picocliEnvironmentOptions());
             case PICOCLI_MIXIN_VALIDATION -> List.of(PicocliRules.picocliMixinValidation());
+            case PUBLIC_API_RECORDS -> List.of(JavaRules.publicApiRecords());
             case PUBLIC_FIELDS -> List.of(JavaRules.publicFields());
-            case PUBLIC_RECORDS -> List.of(JavaRules.publicRecords());
             case SYSTEM_STREAMS -> List.of(JavaRules.systemStreams());
             case TEST_CLASS_VISIBILITY -> List.of(JUnitRules.testClassVisibility());
             case TEST_METHOD_VISIBILITY -> List.of(JUnitRules.testMethodVisibility());

@@ -23,6 +23,12 @@ package org.coordinatekit.foundation.architecture.fixtures;
  * be made public to reach it. Every other fixture is public and is named by its class literal.
  */
 public final class NonPublicFixtures {
+    /** The package-private {@link PackagePrivateDeepRecordHolder.Middle.Nested}. */
+    public static final Class<?> DEEP_RECORD_HOLDER_NESTED_RECORD = PackagePrivateDeepRecordHolder.Middle.Nested.class;
+
+    /** The protected {@link FinalProtectedRecordHolder.Nested}. */
+    public static final Class<?> FINAL_PROTECTED_RECORD_HOLDER_NESTED_RECORD = FinalProtectedRecordHolder.Nested.class;
+
     /** The package-private {@link ImplHolder.NestedImpl}. */
     public static final Class<?> IMPL_HOLDER_NESTED_IMPL = ImplHolder.NestedImpl.class;
 
@@ -31,6 +37,18 @@ public final class NonPublicFixtures {
 
     /** The package-private {@link PackagePrivateRecord}. */
     public static final Class<?> PACKAGE_PRIVATE_RECORD = PackagePrivateRecord.class;
+
+    /** The protected {@link ProtectedClassRecordHolder.Middle.Nested}. */
+    public static final Class<?> PROTECTED_CLASS_RECORD_HOLDER_NESTED_RECORD = ProtectedClassRecordHolder.Middle.Nested.class;
+
+    /** The protected {@link ProtectedRecordHolder.Nested}. */
+    public static final Class<?> PROTECTED_RECORD_HOLDER_NESTED_RECORD = ProtectedRecordHolder.Nested.class;
+
+    /** The package-private {@link PackagePrivateRecordHolder.Nested}. */
+    public static final Class<?> RECORD_HOLDER_NESTED_RECORD = PackagePrivateRecordHolder.Nested.class;
+
+    /** The package-private {@link PackagePrivateSealedInterface.Nested}. */
+    public static final Class<?> SEALED_INTERFACE_NESTED_RECORD = PackagePrivateSealedInterface.Nested.class;
 
     private NonPublicFixtures() {}
 }

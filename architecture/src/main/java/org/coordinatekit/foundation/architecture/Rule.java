@@ -174,18 +174,23 @@ public enum Rule {
     PICOCLI_MIXIN_VALIDATION(Scope.PRODUCTION, true),
 
     /**
+     * Records should not be part of the public API, so a record stays an implementation detail unless a
+     * module decides otherwise. Examines production classes and is on by default. A record is judged by
+     * whether code outside its package can reach it, not by its own flag: it violates the rule when it
+     * and every class enclosing it are public or protected, and a protected level counts only when the
+     * class around it is not final. A record nested in a package-private interface therefore passes,
+     * although Java makes it public. A known limitation remains: a public subclass or implementation
+     * that inherits the nested record is not followed. A module whose public records are its wire
+     * format disables the rule with a reason.
+     */
+    PUBLIC_API_RECORDS(Scope.PRODUCTION, true),
+
+    /**
      * Fields should not be public unless they are static. Examines production classes and is on by
      * default. Synthetic fields are not checked. Enum constants, interface constants, and the fields
      * behind record components pass.
      */
     PUBLIC_FIELDS(Scope.PRODUCTION, true),
-
-    /**
-     * Records should not be public, so a record stays an implementation detail unless a module decides
-     * otherwise. Examines production classes and is on by default. A module whose public records are
-     * its wire format disables the rule with a reason.
-     */
-    PUBLIC_RECORDS(Scope.PRODUCTION, true),
 
     /**
      * Classes should not read {@code System.out} or {@code System.err}. Examines production classes and
