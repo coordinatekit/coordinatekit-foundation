@@ -73,6 +73,8 @@ import javax.tools.ToolProvider;
  * What only a real build can show is covered by TestKit builds.
  * {@link #apply__groupsPackagesByModule} shows that the groups sort each module's packages onto its
  * own tab and that a module outside the selection is built but not documented.
+ * {@link #apply__carriesMainSourceSetFeatureDependencies} shows that the classpath carries the
+ * dependencies of a feature variant on the main source set.
  * {@link #apply__resolvesClasspathInParallelBuild} shows that the classpath carries every kind of
  * compile dependency, and that a project depending on a selected one still compiles against that
  * project's classes. It also shows that the classpath resolves in a parallel build, once with the
@@ -116,6 +118,25 @@ class AggregateJavadocPluginTest {
     /** Matches one tab button of the generated index, capturing the tab's number and its label. */
     private static final Pattern TAB = Pattern
             .compile("<button id=\"all-packages-table-tab(\\d+)\"[^>]*>([^<]*)</button>");
+
+    @Test
+    void apply__carriesMainSourceSetFeatureDependencies(@TempDir Path directory, @TempDir Path classes)
+            throws IOException {
+        // ARRANGE //
+        writeFeatureFixture(directory, classes);
+        GradleRunner runner = GradleRunner.create()
+                .withProjectDir(directory.toFile())
+                .withPluginClasspath()
+                .withArguments("aggregateJavadoc");
+
+        // ACT //
+        BuildResult result = runner.build();
+
+        // ASSERT //
+        assertNotNull(result.task(":aggregateJavadoc"), result.getOutput());
+        assertEquals(TaskOutcome.SUCCESS, result.task(":aggregateJavadoc").getOutcome(), result.getOutput());
+        assertTrue(Files.exists(directory.resolve("build/docs/aggregateJavadoc/fixture/app/App.html")));
+    }
 
     @Test
     void apply__configuresClasspathOnlyWhenRealized() {
@@ -550,6 +571,76 @@ class AggregateJavadocPluginTest {
                 .matcher(index);
         assertTrue(row.find(), "expected a row for " + packagePage + " in:\n" + index);
         return labels.get(row.group(1));
+    }
+
+    /**
+     * Writes a consumer build whose one selected module, {@code app}, declares a feature variant on its
+     * main source set and returns a type from that feature's dependency. The feature's configurations
+     * feed the module's {@code compileClasspath} but are not reached through {@code implementation} or
+     * {@code compileOnly}, so the task fails with a missing symbol if the classpath leaves them out.
+     * The dependency lives in a file repository under {@code repository}, so the build runs offline.
+     *
+     * @param directory the project directory to write into
+     * @param classes a scratch directory to compile the external module's type into
+     * @throws IOException if the fixture cannot be written
+     */
+    private static void writeFeatureFixture(Path directory, Path classes) throws IOException {
+        Files.writeString(directory.resolve("settings.gradle"), """
+                rootProject.name = "fixture"
+                include "app"
+                """);
+        writeGradleProperties(directory);
+        Files.writeString(directory.resolve("build.gradle"), """
+                plugins {
+                    id "org.coordinatekit.foundation.aggregate-javadoc"
+                }
+
+                allprojects {
+                    group = "fixture"
+                    repositories {
+                        maven { url = rootProject.file("repository").toURI() }
+                    }
+                }
+
+                aggregateJavadoc {
+                    projects = [project(":app")]
+                    title = "Fixture"
+                }
+                """);
+        writeRepository(directory.resolve("repository"), classes);
+
+        Files.createDirectories(directory.resolve("app"));
+        Files.writeString(directory.resolve("app/build.gradle"), """
+                plugins { id "java-library" }
+
+                java {
+                    registerFeature("mongo") {
+                        usingSourceSet(sourceSets.main)
+                    }
+                }
+
+                dependencies {
+                    mongoImplementation "fixture.external:lib:1.0"
+                }
+                """);
+        writeSource(directory, "app", "fixture.app", "App", """
+                import fixture.external.Lib;
+
+                /** The documented type whose signature reaches a main source set feature's dependency. */
+                public class App {
+                    /** Creates the type. */
+                    public App() {}
+
+                    /**
+                     * Returns the type from the feature's dependency.
+                     *
+                     * @return a new external type
+                     */
+                    public Lib lib() {
+                        return new Lib();
+                    }
+                }
+                """);
     }
 
     /**
