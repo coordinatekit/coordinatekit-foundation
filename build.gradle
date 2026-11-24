@@ -117,8 +117,9 @@ subprojects {
     }
 
     // Every publication is signed, plugin markers included, because Central rejects a deployment in
-    // which any file lacks a signature. `configureEach` also covers publications registered later, such as the ones `java-gradle-plugin` creates in its own
-    // `afterEvaluate`, so nothing here depends on which callback runs first.
+    // which any file lacks a signature. `configureEach` also covers publications registered later,
+    // such as the ones `java-gradle-plugin` creates in its own `afterEvaluate`, so nothing here
+    // depends on which callback runs first.
     publishing.publications.configureEach {
         signing.sign(it)
     }

@@ -12,7 +12,7 @@ on:
         type: string
         required: true
       dry_run:
-        description: "Run the whole release without pushing or publishing"
+        description: "Run the release through the upload without pushing or publishing; leaves a VALIDATED deployment in the Central Portal to drop by hand"
         type: boolean
         default: false
 
