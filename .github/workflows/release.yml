@@ -12,7 +12,7 @@ on:
         type: string
         required: true
       dry_run:
-        description: "Run the release through the upload without pushing or publishing; leaves a VALIDATED deployment in the Central Portal to drop by hand"
+        description: "Run the release through the upload without pushing or publishing; uploads and validates the bundle on Central, then drops the deployment"
         type: boolean
         default: false
 
@@ -117,10 +117,39 @@ jobs:
           echo "id=$id" >> "$GITHUB_OUTPUT"
 
       - name: Push
+        id: push
         if: ${{ !inputs.dry_run }}
         env:
           RELEASE: ${{ inputs.release }}
         run: git push --atomic origin main "v$RELEASE"
+
+      - name: Drop unpublished deployment
+        if: ${{ always() && steps.upload.outputs.id != '' && (inputs.dry_run || steps.push.outcome == 'failure') }}
+        env:
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+          DEPLOYMENT_ID: ${{ steps.upload.outputs.id }}
+          RELEASE: ${{ inputs.release }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [[ "$DRY_RUN" != true ]]; then
+            status=0
+            git ls-remote --exit-code origin "refs/tags/v$RELEASE" > /dev/null || status=$?
+            if (( status == 0 )); then
+              echo "::error::v$RELEASE is on origin, so deployment $DEPLOYMENT_ID is kept"
+              exit 1
+            fi
+            if (( status != 2 )); then
+              echo "::error::could not check origin for v$RELEASE, so deployment $DEPLOYMENT_ID is kept"
+              exit 1
+            fi
+          fi
+          token=$(printf '%s:%s' "$SONATYPE_USERNAME" "$SONATYPE_PASSWORD" | base64 -w0)
+          echo "::add-mask::$token"
+          curl --silent --show-error --fail-with-body -X DELETE \
+            -H "Authorization: Bearer $token" \
+            "https://central.sonatype.com/api/v1/publisher/deployment/$DEPLOYMENT_ID"
+          echo "Dropped deployment $DEPLOYMENT_ID"
 
       - name: Publish deployment
         if: ${{ !inputs.dry_run }}
