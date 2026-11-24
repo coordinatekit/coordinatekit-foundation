@@ -20,7 +20,7 @@ Each module's design and its traps are documented where they apply, not here. Re
 JDK 21, Gradle through the wrapper.
 
 ```
-./gradlew check                 # compile, tests, Error Prone, Spotless check, POM validation
+./gradlew check                 # compile, tests, Error Prone, Spotless check
 ./gradlew test
 ./gradlew :cli-brand:test --tests '*BannerTest'
 ./gradlew :cli-brand:test --tests '*BannerTest.markSegments*'   # single test method
