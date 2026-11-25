@@ -121,35 +121,25 @@ jobs:
         if: ${{ !inputs.dry_run }}
         env:
           RELEASE: ${{ inputs.release }}
-        run: git push --atomic origin main "v$RELEASE"
+          DEPLOYMENT_ID: ${{ steps.upload.outputs.id }}
+        run: |
+          if git push --atomic origin main "v$RELEASE"; then exit 0; fi
+          status=0
+          git ls-remote --exit-code origin "refs/tags/v$RELEASE" > /dev/null || status=$?
+          if (( status == 2 )); then
+            echo "tag-absent=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::v$RELEASE may be on origin, so deployment $DEPLOYMENT_ID is kept"
+          fi
+          exit 1
 
       - name: Drop unpublished deployment
-        if: ${{ always() && steps.upload.outputs.id != '' && (inputs.dry_run || steps.push.outcome == 'failure') }}
-        env:
-          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
-          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
-          DEPLOYMENT_ID: ${{ steps.upload.outputs.id }}
-          RELEASE: ${{ inputs.release }}
-          DRY_RUN: ${{ inputs.dry_run }}
-        run: |
-          if [[ "$DRY_RUN" != true ]]; then
-            status=0
-            git ls-remote --exit-code origin "refs/tags/v$RELEASE" > /dev/null || status=$?
-            if (( status == 0 )); then
-              echo "::error::v$RELEASE is on origin, so deployment $DEPLOYMENT_ID is kept"
-              exit 1
-            fi
-            if (( status != 2 )); then
-              echo "::error::could not check origin for v$RELEASE, so deployment $DEPLOYMENT_ID is kept"
-              exit 1
-            fi
-          fi
-          token=$(printf '%s:%s' "$SONATYPE_USERNAME" "$SONATYPE_PASSWORD" | base64 -w0)
-          echo "::add-mask::$token"
-          curl --silent --show-error --fail-with-body -X DELETE \
-            -H "Authorization: Bearer $token" \
-            "https://central.sonatype.com/api/v1/publisher/deployment/$DEPLOYMENT_ID"
-          echo "Dropped deployment $DEPLOYMENT_ID"
+        if: ${{ always() && steps.upload.outputs.id != '' && (inputs.dry_run || steps.push.outputs.tag-absent == 'true') }}
+        uses: TheMrMilchmann/central-portal-actions/drop-deployment@v1.0.0
+        with:
+          username: ${{ secrets.SONATYPE_USERNAME }}
+          password: ${{ secrets.SONATYPE_PASSWORD }}
+          deployment-id: ${{ steps.upload.outputs.id }}
 
       - name: Publish deployment
         if: ${{ !inputs.dry_run }}
