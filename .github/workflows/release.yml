@@ -135,7 +135,7 @@ jobs:
 
       - name: Drop unpublished deployment
         if: ${{ always() && steps.upload.outputs.id != '' && (inputs.dry_run || steps.push.outputs.tag-absent == 'true') }}
-        uses: TheMrMilchmann/central-portal-actions/drop-deployment@v1.0.0
+        uses: TheMrMilchmann/central-portal-actions/drop-deployment@49408323afaf26e74be8e9df84a7a4ca81615e3a # v1.0.0
         with:
           username: ${{ secrets.SONATYPE_USERNAME }}
           password: ${{ secrets.SONATYPE_PASSWORD }}
