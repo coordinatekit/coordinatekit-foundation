@@ -1,5 +1,4 @@
 import net.ltgt.gradle.errorprone.CheckSeverity
-import groovy.xml.XmlSlurper
 import org.coordinatekit.foundation.aggregate.javadoc.gradle.AggregateJavadocPlugin
 import org.coordinatekit.foundation.version.references.gradle.VersionReferencesPlugin
 
@@ -107,52 +106,6 @@ subprojects {
         }
     }
 
-    // Central rejects a deployment whose POM is missing a required element, and the late-resolving
-    // description would surface as an empty one rather than a build failure. `check` fails here
-    // instead, for every generated POM, plugin markers included.
-    def modulePath = project.path
-    def pomTasks = tasks.withType(GenerateMavenPom)
-    def pomFiles = files({ pomTasks.collect { it.destination } }).builtBy(pomTasks)
-
-    tasks.register("validatePom") {
-        description = "Verify every generated POM carries the metadata Maven Central requires"
-        group = "verification"
-
-        inputs.files(pomFiles)
-
-        doLast {
-            pomFiles.each { pomFile ->
-                // Not namespace-aware: the POM declares a default xmlns, and matching bare local
-                // names keeps the lookups readable.
-                def pom = new XmlSlurper(false, false).parse(pomFile)
-                def missing = []
-                def require = { String element, String value -> if (!value?.trim()) missing << element }
-
-                require("groupId", pom.groupId.text())
-                require("artifactId", pom.artifactId.text())
-                require("version", pom.version.text())
-                require("name", pom.name.text())
-                require("description", pom.description.text())
-                require("url", pom.url.text())
-                require("licenses/license/name", pom.licenses.license.name.text())
-                require("licenses/license/url", pom.licenses.license.url.text())
-                require("developers/developer/name", pom.developers.developer.name.text())
-                require("scm/url", pom.scm.url.text())
-                require("scm/connection", pom.scm.connection.text())
-
-                if (missing) {
-                    throw new GradleException(
-                            "${modulePath} POM is missing metadata Maven Central requires: ${missing.join(', ')} " +
-                            "(see ${pomFile})")
-                }
-            }
-        }
-    }
-
-    tasks.named("check") {
-        dependsOn tasks.named("validatePom")
-    }
-
     signing {
         String signingKey = findProperty("signingKey")
         String signingPassword = findProperty("signingPassword")
@@ -163,9 +116,10 @@ subprojects {
         }
     }
 
-    // Every publication is signed, for the same reason every POM is validated. `configureEach` also
-    // covers publications registered later, such as the ones `java-gradle-plugin` creates in its own
-    // `afterEvaluate`, so nothing here depends on which callback runs first.
+    // Every publication is signed, plugin markers included, because Central rejects a deployment in
+    // which any file lacks a signature. `configureEach` also covers publications registered later,
+    // such as the ones `java-gradle-plugin` creates in its own `afterEvaluate`, so nothing here
+    // depends on which callback runs first.
     publishing.publications.configureEach {
         signing.sign(it)
     }
@@ -440,12 +394,14 @@ project(":concordance-errorprone") {
 }
 
 // One deployment, not one per module: nmcp collects every module's publication into a single
-// bundle and uploads it once, so Central validates and publishes every module as a unit.
+// bundle and uploads it once, so Central validates and publishes every module as a unit. The upload
+// stops at `VALIDATED`, so Central checks the whole bundle before the release workflow pushes
+// anything, and `nmcpPublishDeployment` makes the deployment live only after the push.
 nmcpAggregation {
     centralPortal {
         username = findProperty("centralPortalUsername")
         password = findProperty("centralPortalPassword")
-        publishingType = "AUTOMATIC"
+        publishingType = "USER_MANAGED"
     }
 }
 

@@ -12,7 +12,7 @@ on:
         type: string
         required: true
       dry_run:
-        description: "Run the whole release without pushing or publishing"
+        description: "Run the release through the upload without pushing or publishing; uploads and validates the bundle on Central, then drops the deployment"
         type: boolean
         default: false
 
@@ -46,7 +46,7 @@ jobs:
         id: app
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
+          client-id: ${{ secrets.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
       - name: Checkout
@@ -96,55 +96,65 @@ jobs:
           fi
           cat release-notes.md
 
-      - name: Upload release notes
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-notes
-          path: release-notes.md
-
-      - name: Push
-        if: ${{ !inputs.dry_run }}
+      - name: Check out release tag
         env:
           RELEASE: ${{ inputs.release }}
-        run: git push --atomic origin HEAD:main "v$RELEASE"
+        run: git checkout "v$RELEASE"
 
-  publish:
-    needs: release
-    if: ${{ !inputs.dry_run }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          ref: v${{ inputs.release }}
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v6.3.0
-        with:
-          java-version: "21"
-          distribution: "temurin"
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
-
-      - name: Publish to Maven Central
+      - name: Upload to Maven Central
+        id: upload
         env:
           ORG_GRADLE_PROJECT_centralPortalUsername: ${{ secrets.SONATYPE_USERNAME }}
           ORG_GRADLE_PROJECT_centralPortalPassword: ${{ secrets.SONATYPE_PASSWORD }}
           ORG_GRADLE_PROJECT_signingKey: ${{ secrets.GPG_PRIVATE_KEY }}
           ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.GPG_PASSPHRASE }}
-        run: ./gradlew publishAggregationToCentralPortal
+        run: |
+          set -o pipefail   # without it, tee's exit status hides a Gradle failure
+          ./gradlew publishAggregationToCentralPortal | tee upload.log
+          id=$(sed -n "s/^Nmcp: deployment bundle '\(.*\)' uploaded\.$/\1/p" upload.log)
+          if [[ -z "$id" ]]; then echo "::error::no deployment id in the upload log"; exit 1; fi
+          echo "Deployment id: $id"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
 
-      - name: Download release notes
-        uses: actions/download-artifact@v8
-        with:
-          name: release-notes
+      - name: Push
+        id: push
+        if: ${{ !inputs.dry_run }}
+        env:
+          RELEASE: ${{ inputs.release }}
+          DEPLOYMENT_ID: ${{ steps.upload.outputs.id }}
+        run: |
+          if git push --atomic origin main "v$RELEASE"; then exit 0; fi
+          status=0
+          git ls-remote --exit-code origin "refs/tags/v$RELEASE" > /dev/null || status=$?
+          if (( status == 2 )); then
+            echo "tag-absent=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::v$RELEASE may be on origin, so deployment $DEPLOYMENT_ID is kept"
+          fi
+          exit 1
+
+      - name: Drop unpublished deployment
+        if: ${{ always() && steps.upload.outputs.id != '' && (inputs.dry_run || steps.push.outputs.tag-absent == 'true') }}
+        env:
+          CREDENTIALS: ${{ secrets.SONATYPE_USERNAME }}:${{ secrets.SONATYPE_PASSWORD }}
+          DEPLOYMENT_ID: ${{ steps.upload.outputs.id }}
+        run: |
+          token=$(printf %s "$CREDENTIALS" | base64 -w0) && echo "::add-mask::$token"
+          curl -sS --fail-with-body -X DELETE --oauth2-bearer "$token" \
+            "https://central.sonatype.com/api/v1/publisher/deployment/$DEPLOYMENT_ID"
+
+      - name: Publish deployment
+        if: ${{ !inputs.dry_run }}
+        env:
+          ORG_GRADLE_PROJECT_centralPortalUsername: ${{ secrets.SONATYPE_USERNAME }}
+          ORG_GRADLE_PROJECT_centralPortalPassword: ${{ secrets.SONATYPE_PASSWORD }}
+          DEPLOYMENT_ID: ${{ steps.upload.outputs.id }}
+        run: ./gradlew nmcpPublishDeployment -PnmcpDeploymentId="$DEPLOYMENT_ID"
 
       - name: Create GitHub Release
+        if: ${{ !inputs.dry_run }}
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ inputs.release }}
           body_path: release-notes.md
+          token: ${{ steps.app.outputs.token }}
