@@ -25,7 +25,6 @@ picocli = "4.7.7"
 errorprone = "2.51.0"
 errorprone-plugin = "5.2.0"
 gradle-release = "3.2.0"
-# release.yml parses the "Nmcp: deployment bundle ... uploaded." log line for the deployment id; dry-run a release after bumping
 nmcp = "1.6.2"
 spotless = "8.11.0"
 
