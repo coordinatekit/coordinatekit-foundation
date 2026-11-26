@@ -27,6 +27,7 @@ import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.testfixtures.ProjectBuilder;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -57,7 +58,8 @@ import java.util.stream.Stream;
  * That fixture build resolves the check from the {@code concordance-errorprone} module's own
  * {@code build/libs}, not from Maven Central, so it tests the check as it is in the working tree
  * rather than as it was last released. The directory and the Error Prone versions to pin arrive as
- * system properties the test task sets.
+ * system properties the test task sets. Each method that starts a TestKit build is tagged
+ * {@code testkit}, and PITest skips it because the daemon never runs the mutant.
  */
 class ConcordancePluginTest {
     /**
@@ -87,6 +89,7 @@ class ConcordancePluginTest {
         assertEquals(List.of(), extension.getScaffoldingFieldTypes().get());
     }
 
+    @Tag("testkit")
     @Test
     void apply__failsCompilationOnMisorderedMembers(@TempDir Path directory) throws IOException {
         // ARRANGE //
@@ -146,6 +149,7 @@ class ConcordancePluginTest {
         );
     }
 
+    @Tag("testkit")
     @Test
     void apply__rerunsCompilationWhenExemptionChanges(@TempDir Path directory) throws IOException {
         // ARRANGE //

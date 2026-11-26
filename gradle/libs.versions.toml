@@ -26,6 +26,9 @@ errorprone = "2.51.0"
 errorprone-plugin = "5.2.0"
 gradle-release = "3.2.0"
 nmcp = "1.6.2"
+pitest = "1.30.2"
+pitest-junit5 = "1.2.3"
+pitest-plugin = "1.19.0"
 spotless = "8.11.0"
 
 [libraries]
@@ -47,10 +50,13 @@ junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 license-report-gradle-plugin = { module = "com.github.jk1:gradle-license-report", version.ref = "license-report" }
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
+pitest-command-line = { module = "org.pitest:pitest-command-line", version.ref = "pitest" }
+pitest-junit5-plugin = { module = "org.pitest:pitest-junit5-plugin", version.ref = "pitest-junit5" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 
 [plugins]
 errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
 nmcp-aggregation = { id = "com.gradleup.nmcp.aggregation", version.ref = "nmcp" }
+pitest = { id = "info.solidsoft.pitest", version.ref = "pitest-plugin" }
 release = { id = "net.researchgate.release", version.ref = "gradle-release" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

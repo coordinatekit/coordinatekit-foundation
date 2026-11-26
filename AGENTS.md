@@ -13,7 +13,7 @@ coordinatekit-foundation is the base layer CoordinateKit's other repositories bu
 - `third-party-licenses-gradle` is the plugin that checks dependency licenses and renders `THIRD-PARTY-LICENSES.txt`.
 - `version-references-gradle` is the plugin that rewrites the version references in a build's documents at release time.
 
-Each module's design and its traps are documented where they apply, not here. Read the class Javadoc of the plugin or main class before changing a module, and the class Javadoc of a test before changing that suite. The root `build.gradle` and `buildSrc/build.gradle` comment every block of wiring with the reason it is there, and `gradle/libs.versions.toml` states the update policy for each group. README.md has every module's consumer recipe, and RELEASE.md the release flow, its credentials, and its failure recovery.
+Each module's design and its traps are documented where they apply, not here. Read the class Javadoc of the plugin or main class before changing a module, and the class Javadoc of a test before changing that suite. The root `build.gradle` and `buildSrc/build.gradle` comment every block of wiring with the reason it is there, and `gradle/libs.versions.toml` states the update policy for each group. README.md has every module's consumer recipe, CONTRIBUTING.md covers mutation testing, and RELEASE.md has the release flow, its credentials, and its failure recovery.
 
 ## Commands
 
@@ -30,6 +30,8 @@ JDK 21, Gradle through the wrapper.
 ./gradlew :version-references-gradle:test    # runs a real Gradle build
 ./gradlew aggregateJacocoReport # build/reports/jacoco/aggregateJacocoReport/html/index.html
 ./gradlew aggregateJavadoc      # runs with -Werror; any Javadoc warning is a failure
+./gradlew pitest                # mutation-test every module with code, on request only
+./gradlew :cli-brand:pitest     # cli-brand/build/reports/pitest/index.html
 ```
 
 Run `pre-commit install` once per clone. The hooks run prettier, `./gradlew spotlessApply`, and `./gradlew check` before every commit, and enforce Conventional Commits on the message. A commit is slow and arrives pre-verified.
@@ -64,7 +66,7 @@ Code that touches a terminal, the environment, or Git splits into a thin gathere
 
 JUnit Jupiter. A parameterized case is a record named `<Something>Parameters` carrying a `name` field, with a `static Stream<…> methodName()` provider directly above the `@MethodSource @ParameterizedTest` of the same name. Test methods are named `member__scenario`, as in `colorMode__ladder`. Bodies are segmented with `// ARRANGE //`, `// ACT //`, and `// ASSERT //`. Assertions describe structure rather than pinning exact output, so the output can change without rewriting the tests.
 
-Every plugin module tests its plugin through TestKit builds as well as `ProjectBuilder` projects. Each TestKit fixture writes the `testKit.fixtureJvmArgs` system property into its `gradle.properties` as `org.gradle.jvmargs`, or the fixture's coverage never reaches the report; copy an existing suite's `writeFixture`.
+Every plugin module tests its plugin through TestKit builds as well as `ProjectBuilder` projects. Each TestKit fixture writes the `testKit.fixtureJvmArgs` system property into its `gradle.properties` as `org.gradle.jvmargs`, or the fixture's coverage never reaches the report; copy an existing suite's `writeFixture`. A method that starts a TestKit build carries `@Tag("testkit")`, and PITest skips it because the daemon never runs the mutant.
 
 ## CI and releases
 

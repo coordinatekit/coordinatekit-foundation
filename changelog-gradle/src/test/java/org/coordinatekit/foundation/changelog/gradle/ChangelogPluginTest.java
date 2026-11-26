@@ -29,6 +29,7 @@ import org.gradle.testfixtures.ProjectBuilder;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -64,7 +65,9 @@ import java.util.stream.Stream;
  * The fixture builds run in daemons that the test JVM's coverage agent cannot reach. When the test
  * task sets {@code testKit.fixtureJvmArgs}, {@code writeFixture} passes it on through each
  * fixture's {@code gradle.properties}, which is how the build records their coverage. Without it,
- * as under an IDE's own test runner, the fixtures run the same and record nothing.
+ * as under an IDE's own test runner, the fixtures run the same and record nothing. Each method that
+ * starts a TestKit build is tagged {@code testkit}, and PITest skips it because the daemon never
+ * runs the mutant.
  */
 class ChangelogPluginTest {
     /**
@@ -108,6 +111,7 @@ class ChangelogPluginTest {
         assertFalse(project.getExtensions().getByType(ChangelogExtension.class).getRepoUrl().isPresent());
     }
 
+    @Tag("testkit")
     @Test
     void apply__failsOnMalformedReleaseVersion(@TempDir Path directory) throws GitAPIException, IOException {
         // ARRANGE //
@@ -129,6 +133,7 @@ class ChangelogPluginTest {
         assertEquals("previous", Files.readString(changelog), "the changelog is untouched");
     }
 
+    @Tag("testkit")
     @Test
     void apply__failsUpFrontWhenInitialReleaseIsMissing(@TempDir Path directory) throws GitAPIException, IOException {
         // ARRANGE //
@@ -150,6 +155,7 @@ class ChangelogPluginTest {
         assertEquals("previous", Files.readString(changelog), "the changelog is untouched");
     }
 
+    @Tag("testkit")
     @Test
     void apply__failsWithoutRepoUrl(@TempDir Path directory) throws IOException {
         // ARRANGE //
@@ -200,6 +206,7 @@ class ChangelogPluginTest {
         assertEquals("v0.3.0", task.untaggedName.get());
     }
 
+    @Tag("testkit")
     @Test
     void apply__leavesThePreviousFileWhenNothingIsWritten(@TempDir Path directory) throws IOException {
         // ARRANGE //
@@ -215,6 +222,7 @@ class ChangelogPluginTest {
         assertEquals("previous", Files.readString(changelog), "a swallowed failure loses nothing");
     }
 
+    @Tag("testkit")
     @Test
     void apply__leavesThePreviousFileWhenRenderFails(@TempDir Path directory) throws GitAPIException, IOException {
         // ARRANGE //
@@ -236,6 +244,7 @@ class ChangelogPluginTest {
         assertEquals("previous", Files.readString(changelog), "a failed render loses nothing");
     }
 
+    @Tag("testkit")
     @Test
     void apply__rendersTaggedHistory(@TempDir Path directory) throws GitAPIException, IOException {
         // ARRANGE //
@@ -281,6 +290,7 @@ class ChangelogPluginTest {
         assertFalse(changelog.contains("(#12)"), "the pull request reference moves out of the description");
     }
 
+    @Tag("testkit")
     @Test
     void apply__rendersUnreleasedCommitsUnderReleaseVersion(@TempDir Path directory)
             throws GitAPIException, IOException {
@@ -335,6 +345,7 @@ class ChangelogPluginTest {
         }
     }
 
+    @Tag("testkit")
     @Test
     void apply__reusesTheConfigurationCache(@TempDir Path directory) throws GitAPIException, IOException {
         // ARRANGE //
@@ -377,6 +388,7 @@ class ChangelogPluginTest {
         );
     }
 
+    @Tag("testkit")
     @Test
     void apply__startsAfterFromRevisionAndAppendsInitialRelease(@TempDir Path directory)
             throws GitAPIException, IOException {
