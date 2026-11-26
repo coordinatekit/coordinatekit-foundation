@@ -1,3 +1,7 @@
+import com.vanniktech.maven.publish.GradlePlugin
+import com.vanniktech.maven.publish.JavaLibrary
+import com.vanniktech.maven.publish.JavadocJar
+import com.vanniktech.maven.publish.SourcesJar
 import net.ltgt.gradle.errorprone.CheckSeverity
 import org.coordinatekit.foundation.aggregate.javadoc.gradle.AggregateJavadocPlugin
 import org.coordinatekit.foundation.version.references.gradle.VersionReferencesPlugin
@@ -10,6 +14,7 @@ plugins {
     id "java-library"
     alias(libs.plugins.nmcp.aggregation)
     alias(libs.plugins.release)
+    alias(libs.plugins.vanniktech.publish.base) apply false
     id "org.coordinatekit.foundation.changelog"
 }
 
@@ -28,9 +33,9 @@ allprojects {
 // only makes sense for a module with sources.
 def codeProjects = subprojects.findAll { it.name != "conventions" }
 
-// Modules that publish a Gradle plugin. `java-gradle-plugin` creates their `pluginMaven` publication
-// from `components.java`, so they must not also get the `centralPortal` publication every other
-// module gets, or the same jar would ship twice under one coordinate.
+// Modules that publish a Gradle plugin. They get `java-gradle-plugin`, and with it vanniktech's
+// `GradlePlugin` platform, which publishes the `pluginMaven` publication that plugin creates rather
+// than adding one of its own, so each jar ships once under its coordinate.
 def pluginProjects = [
         project(":aggregate-javadoc-gradle"),
         project(":changelog-gradle"),
@@ -39,93 +44,62 @@ def pluginProjects = [
         project(":version-references-gradle")
 ]
 
-// Signing is required only when a deployment is actually going to Central. `./gradlew build`,
-// `publishToMavenLocal`, and snapshot uploads all run without a key. The answer is settled once the
-// task graph is, and held in a property: the configuration cache stores it with the graph, whereas
-// asking the graph again from a signing task at execution time is not allowed.
-def isPublishingToCentral = objects.property(Boolean).convention(false)
-gradle.taskGraph.whenReady { graph ->
-    isPublishingToCentral.set(graph.allTasks.any { it.name == "nmcpPublishAggregationToCentralPortal" })
-}
-
 subprojects {
     apply plugin: "com.diffplug.spotless"
     apply plugin: "java-library"
-    apply plugin: "maven-publish"
-    apply plugin: "signing"
+    // `configure(GradlePlugin)` below fails unless `java-gradle-plugin` is already applied when it
+    // is called, so it is applied here rather than with the rest of the plugin modules' wiring.
+    if (pluginProjects.contains(project)) {
+        apply plugin: "java-gradle-plugin"
+    }
+    apply plugin: "com.vanniktech.maven.publish.base"
     apply plugin: "com.gradleup.nmcp"
 
-    java {
-        withJavadocJar()
-        withSourcesJar()
+    // A documented module's javadoc jar comes from Gradle rather than from vanniktech, so `None` tells
+    // vanniktech to add no jar of its own. Vanniktech attaches its jar to the publication as a bare
+    // artifact, which leaves the `javadocElements` variant out of the published `.module` file.
+    // `withJavadocJar()` and `None` go together: `None` alone publishes no javadoc jar, and Central
+    // requires one. `conventions` publishes two resources and no classes, so it has nothing to
+    // document, and its jar is vanniktech's empty one.
+    def documented = project.name != "conventions"
+    if (documented) {
+        java.withJavadocJar()
     }
+    def javadocJar = documented ? new JavadocJar.None() : new JavadocJar.Empty()
 
-    // The subproject's own build.gradle has not been evaluated yet when this block runs, so the
-    // description has to be read through a provider that resolves at POM-generation time.
-    def moduleDescription = provider { project.description }
+    // The base plugin creates each module's publications, but uploads nothing: nmcp is the only
+    // uploader, so the build never calls `publishToMavenCentral()`. Everything in the POM that every
+    // module shares comes from the `POM_*` properties in gradle.properties.
+    mavenPublishing {
+        configure(pluginProjects.contains(project)
+                ? new GradlePlugin(javadocJar, new SourcesJar.Sources())
+                : new JavaLibrary(javadocJar, new SourcesJar.Sources()))
 
-    publishing {
-        publications {
-            if (!pluginProjects.contains(project)) {
-                centralPortal(MavenPublication) {
-                    from components.java
-                }
-            }
+        pomFromGradleProperties()
+
+        // `pom` and signing apply to every publication, so a plugin module's `pluginMaven`
+        // publication and its marker both carry them. Central validates the marker POM by the same
+        // rules as any other, and rejects a deployment in which any file lacks a signature.
+        pom {
+            name = "CoordinateKit Foundation ${project.name}"
+            // The subproject's own build.gradle has not been evaluated yet when this block runs, so
+            // the description has to be read through a provider that resolves at POM-generation
+            // time.
+            description = provider { project.description }
         }
 
-        // Applied to every publication rather than to `centralPortal` by name, so that a plugin
-        // module's `pluginMaven` publication and its marker both carry it. Central validates the
-        // marker POM by the same rules as any other.
-        publications.withType(MavenPublication).configureEach {
-            pom {
-                name = "CoordinateKit Foundation ${project.name}"
-                description = moduleDescription
-                url = findProperty("repoUrl")
-
-                licenses {
-                    license {
-                        name = "The Apache License, Version 2.0"
-                        url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
-                    }
-                }
-
-                developers {
-                    developer {
-                        id = "andymarek"
-                        name = "Andy Marek"
-                        email = "andy@andymarek.com"
-                    }
-                }
-
-                scm {
-                    connection = "scm:git:git://github.com/coordinatekit/coordinatekit-foundation.git"
-                    developerConnection = "scm:git:ssh://github.com/coordinatekit/coordinatekit-foundation.git"
-                    url = findProperty("repoUrl")
-                }
-            }
-        }
+        // A signature is required for any version that is not a `-SNAPSHOT`, and the in-memory key
+        // is used when `signingInMemoryKey` is present.
+        signAllPublications()
     }
 
+    // Without an in-memory key, a release signs with the local gpg installation. Snapshots are left
+    // without a signatory: `signAllPublications()` does not require their signatures, but a gpg
+    // signatory would still try to sign them, and snapshot.yml has no gpg key to sign with.
     signing {
-        String signingKey = findProperty("signingKey")
-        String signingPassword = findProperty("signingPassword")
-        if (signingKey) {
-            useInMemoryPgpKeys(signingKey, signingPassword)
-        } else {
+        if (!providers.gradleProperty("signingInMemoryKey").present && !version.toString().endsWith("-SNAPSHOT")) {
             useGpgCmd()
         }
-    }
-
-    // Every publication is signed, plugin markers included, because Central rejects a deployment in
-    // which any file lacks a signature. `configureEach` also covers publications registered later,
-    // such as the ones `java-gradle-plugin` creates in its own `afterEvaluate`, so nothing here
-    // depends on which callback runs first.
-    publishing.publications.configureEach {
-        signing.sign(it)
-    }
-
-    tasks.withType(Sign).configureEach {
-        onlyIf { isPublishingToCentral.get() }
     }
 
     // The files are read from conventions' sources by path rather than from its published jar, so
@@ -193,9 +167,8 @@ repositories {
     }
 }
 
+// `java-gradle-plugin` itself is applied in `subprojects`, ahead of the publishing setup.
 configure(pluginProjects) {
-    apply plugin: "java-gradle-plugin"
-
     // Every plugin module tests against real Gradle builds through TestKit, so they share the
     // fixture wiring below.
     //
@@ -315,16 +288,6 @@ configure(project(":version-references-gradle")) {
         systemProperty "versionReferences.group", root.group.toString()
         systemProperty "versionReferences.rootName", root.name
         systemProperty "versionReferences.modules", root.subprojects*.name.sort().join(",")
-    }
-}
-
-// `conventions` publishes two resources and no classes, so javadoc exits with "No public or
-// protected classes found to document" and would fail `build`. Its javadoc jar is empty by
-// necessity; Central only requires that one exist. Every other module keeps javadoc's error
-// reporting.
-project(":conventions") {
-    javadoc {
-        failOnError = false
     }
 }
 

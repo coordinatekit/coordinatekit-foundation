@@ -27,6 +27,7 @@ errorprone-plugin = "5.2.0"
 gradle-release = "3.2.0"
 nmcp = "1.6.2"
 spotless = "8.11.0"
+vanniktech-publish = "0.37.0"
 
 [libraries]
 archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
@@ -54,3 +55,4 @@ errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
 nmcp-aggregation = { id = "com.gradleup.nmcp.aggregation", version.ref = "nmcp" }
 release = { id = "net.researchgate.release", version.ref = "gradle-release" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+vanniktech-publish-base = { id = "com.vanniktech.maven.publish.base", version.ref = "vanniktech-publish" }
