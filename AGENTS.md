@@ -36,7 +36,7 @@ Run `pre-commit install` once per clone. The hooks run prettier, `./gradlew spot
 
 ## Build layout
 
-The root `build.gradle` owns all module wiring. A subproject's own `build.gradle` holds its `description` and its dependencies, plus a `gradlePlugin { plugins { ... } }` block if it publishes a plugin, and nothing else. Every subproject gets Spotless, `java-library`, and the Maven Central publishing setup; every one except `conventions`, which has no sources, also gets JaCoCo, Error Prone, JSpecify as `api`, and JUnit.
+The root `build.gradle` owns all module wiring. A subproject's own `build.gradle` holds its `description` and its dependencies, plus a `gradlePlugin { plugins { ... } }` block if it publishes a plugin, and nothing else. Every subproject gets Spotless, `java-library`, and `com.vanniktech.maven.publish.base`. The last of these creates the subproject's publications, and nmcp bundles them into the one Central deployment. Every subproject except `conventions`, which has no sources, also gets JaCoCo, Error Prone, JSpecify as `api`, and JUnit.
 
 A new module needs an `include` in `settings.gradle` and a `build.gradle` setting its `description` and naming its dependencies. Everything else is inherited, including its place in the single Central deployment. Its package has to be the group plus the module name with dashes turned into dots, so `cli-brand` lives in `org.coordinatekit.foundation.cli.brand`, because `aggregateJavadoc` derives each module's Javadoc group from its name. A name segment whose display form is not the segment capitalised, such as `cli` or `errorprone`, goes in the `wordForms` map of the root `build.gradle`'s `aggregateJavadoc` block.
 
