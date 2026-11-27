@@ -30,6 +30,7 @@ pitest = "1.30.2"
 pitest-junit5 = "1.2.3"
 pitest-plugin = "1.19.0"
 spotless = "8.11.0"
+vanniktech-publish = "0.37.0"
 
 [libraries]
 archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
@@ -60,3 +61,4 @@ nmcp-aggregation = { id = "com.gradleup.nmcp.aggregation", version.ref = "nmcp" 
 pitest = { id = "info.solidsoft.pitest", version.ref = "pitest-plugin" }
 release = { id = "net.researchgate.release", version.ref = "gradle-release" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+vanniktech-publish-base = { id = "com.vanniktech.maven.publish.base", version.ref = "vanniktech-publish" }

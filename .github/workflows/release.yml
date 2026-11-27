@@ -106,8 +106,8 @@ jobs:
         env:
           ORG_GRADLE_PROJECT_centralPortalUsername: ${{ secrets.SONATYPE_USERNAME }}
           ORG_GRADLE_PROJECT_centralPortalPassword: ${{ secrets.SONATYPE_PASSWORD }}
-          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.GPG_PRIVATE_KEY }}
-          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.GPG_PASSPHRASE }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_PRIVATE_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.GPG_PASSPHRASE }}
         run: |
           set -o pipefail   # without it, tee's exit status hides a Gradle failure
           ./gradlew publishAggregationToCentralPortal | tee upload.log
