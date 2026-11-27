@@ -236,7 +236,7 @@ spotless {
 }
 ```
 
-Reading the entry as a string rather than resolving it as a file matters. `configFile` resolves its argument during configuration, which would make every invocation of the consumer's build, including `./gradlew tasks`, resolve the jar as a file dependency. `configXml` and `licenseHeader` take content directly, so a single `asString()` covers it.
+With Spotless 8.11.0, `help` and `compileJava` don't resolve the jar under this recipe, but `tasks` and `spotlessCheck` do.
 
 The example points `licenseHeaderFile` at the consumer's own file rather than at `license_header.txt` from the jar. The bundled header names CoordinateKit's copyright holder and Apache-2.0, so it suits this repository's own projects and nothing else. Take it only if that is genuinely your header.
 
