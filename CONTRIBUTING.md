@@ -2,7 +2,7 @@
 
 ## Mutation Testing
 
-[PITest](https://pitest.org) makes small changes to a module's compiled code, called mutants, and runs the module's tests against each one. It covers every module except `conventions`, which has no code. It runs only when requested, not as part of `check` or `build`, and it always analyzes the whole module.
+[PITest](https://pitest.org) makes small changes to a module's compiled code, called mutants, and runs the module's tests against each one. It covers every module except `conventions`, which has no code. It runs only when requested, not as part of `check` or `build`, and by default it analyzes the whole module.
 
 ```bash
 ./gradlew pitest              # every module
@@ -12,6 +12,12 @@
 Each module writes its own HTML report to `<module>/build/reports/pitest/index.html`, and there is no combined report.
 
 Gradle skips a module's run when none of its inputs have changed. The task then reports `UP-TO-DATE` or `FROM-CACHE` and prints no terminal summary. To run the analysis anyway, add `--rerun` to either command.
+
+To narrow a run, pass fully qualified class names, separated by commas:
+
+```bash
+./gradlew :cli-brand:pitest -Ppitest.targetClasses=org.coordinatekit.foundation.cli.brand.Banner
+```
 
 A `SURVIVED` mutant means a test ran the line but no assertion caught the change. A `NO_COVERAGE` mutant means that no test PITest ran reached the line. To judge how well the assertions catch changes, read "Test strength" in the terminal summary, which is the share of mutants detected among those that tests ran.
 

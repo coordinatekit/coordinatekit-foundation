@@ -32,6 +32,7 @@ JDK 21, Gradle through the wrapper.
 ./gradlew aggregateJavadoc      # runs with -Werror; any Javadoc warning is a failure
 ./gradlew pitest                # mutation-test every module with code, on request only
 ./gradlew :cli-brand:pitest     # cli-brand/build/reports/pitest/index.html
+./gradlew :cli-brand:pitest -Ppitest.targetClasses=org.coordinatekit.foundation.cli.brand.Banner  # one class
 ```
 
 Run `pre-commit install` once per clone. The hooks run prettier, `./gradlew spotlessApply`, and `./gradlew check` before every commit, and enforce Conventional Commits on the message. A commit is slow and arrives pre-verified.
