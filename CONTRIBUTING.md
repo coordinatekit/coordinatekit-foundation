@@ -13,7 +13,7 @@ Each module writes its own HTML report to `<module>/build/reports/pitest/index.h
 
 Gradle skips a module's run when none of its inputs have changed. The task then reports `UP-TO-DATE` or `FROM-CACHE` and prints no terminal summary. To run the analysis anyway, add `--rerun` to either command.
 
-To narrow a run, pass fully qualified class names, separated by commas:
+On a pull request, CI mutates only the classes whose main source or test changed. To narrow a local run, pass fully qualified class names, separated by commas:
 
 ```bash
 ./gradlew :cli-brand:pitest -Ppitest.targetClasses=org.coordinatekit.foundation.cli.brand.Banner

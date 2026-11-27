@@ -154,15 +154,18 @@ configure(codeProjects) {
     }
 
     pitest {
+        def processors = Runtime.runtime.availableProcessors()
+
         excludedGroups = ["testkit"]
         failWhenNoMutations = !providers.gradleProperty("pitest.targetClasses").present
         junit5PluginVersion = rootProject.libs.pitest.junit5.plugin.get().version
+        outputFormats = ["HTML", "XML"]
         pitestVersion = rootProject.libs.pitest.command.line.get().version
         timestampedReports = false
         targetClasses = providers.gradleProperty("pitest.targetClasses")
                 .map { it.split(",").collectMany { fqn -> [fqn, "${fqn}\$*" as String] } }
         targetTests = ["${project.group}.*" as String]
-        threads = Math.max(1, Runtime.runtime.availableProcessors().intdiv(2))
+        threads = providers.environmentVariable("CI").isPresent() ? processors : Math.max(1, processors.intdiv(2))
     }
 }
 
@@ -313,6 +316,17 @@ configure(project(":version-references-gradle")) {
     tasks.named("test", Test) {
         inputs.files(repositoryDocs).withPropertyName("repositoryDocs")
         repositoryProperties.each { key, value -> systemProperty key, value }
+    }
+
+    // PITest runs the same tests in JVMs of its own, which take system properties only as flags.
+    // PIT splits that argument list at every comma, the ones in the module list included, except
+    // within braces, which it then removes.
+    pitest {
+        jvmArgs.addAll(repositoryProperties.collect { key, value -> "{-D${key}=${value}}" as String })
+    }
+
+    tasks.named("pitest") {
+        inputs.files(repositoryDocs).withPropertyName("repositoryDocs")
     }
 
     // PITest runs the same tests in JVMs of its own, which take system properties only as flags.
