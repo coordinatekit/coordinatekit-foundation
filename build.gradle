@@ -180,15 +180,18 @@ configure(codeProjects) {
     }
 
     pitest {
+        def processors = Runtime.runtime.availableProcessors()
+
         excludedGroups = ["testkit"]
         failWhenNoMutations = !providers.gradleProperty("pitest.targetClasses").present
         junit5PluginVersion = rootProject.libs.pitest.junit5.plugin.get().version
+        outputFormats = ["HTML", "XML"]
         pitestVersion = rootProject.libs.pitest.command.line.get().version
         timestampedReports = false
         targetClasses = providers.gradleProperty("pitest.targetClasses")
                 .map { it.split(",").collectMany { fqn -> [fqn, "${fqn}\$*" as String] } }
         targetTests = ["${project.group}.*" as String]
-        threads = Math.max(1, Runtime.runtime.availableProcessors().intdiv(2))
+        threads = providers.environmentVariable("CI").isPresent() ? processors : Math.max(1, processors.intdiv(2))
     }
 }
 
