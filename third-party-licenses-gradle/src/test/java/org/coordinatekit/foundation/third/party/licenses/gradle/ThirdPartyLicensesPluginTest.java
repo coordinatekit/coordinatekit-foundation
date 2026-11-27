@@ -31,6 +31,7 @@ import org.gradle.testfixtures.ProjectBuilder;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 import org.gradle.testkit.runner.TaskOutcome;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -63,7 +64,8 @@ import java.util.zip.ZipFile;
  * registered licenses agree are read off a {@link ProjectBuilder} project. Everything that can only
  * be shown by resolving dependencies and running the license report, the failing check, the two
  * failures that stop the render, and the rendered file itself, is covered by TestKit builds against
- * a Maven repository the test writes to disk.
+ * a Maven repository the test writes to disk. Each method that starts a TestKit build is tagged
+ * {@code testkit}, and PITest skips it because the daemon never runs the mutant.
  *
  * <p>
  * The fixture puts the plugin under test on its own {@code buildscript} classpath rather than
@@ -282,6 +284,7 @@ class ThirdPartyLicensesPluginTest {
         return messages.toString();
     }
 
+    @Tag("testkit")
     @Test
     void check__failsOnDisallowedLicense(@TempDir Path directory) throws IOException {
         // ARRANGE //
@@ -306,6 +309,7 @@ class ThirdPartyLicensesPluginTest {
         );
     }
 
+    @Tag("testkit")
     @Test
     void generateThirdPartyLicenses__attributesApprovedLicense(@TempDir Path directory) throws IOException {
         // ARRANGE //
@@ -336,6 +340,7 @@ class ThirdPartyLicensesPluginTest {
         assertFalse(attribution.contains("Weird License"), attribution);
     }
 
+    @Tag("testkit")
     @Test
     void generateThirdPartyLicenses__failsOnMissingRequiredNotice(@TempDir Path directory) throws IOException {
         // ARRANGE //
@@ -356,6 +361,7 @@ class ThirdPartyLicensesPluginTest {
         );
     }
 
+    @Tag("testkit")
     @Test
     void generateThirdPartyLicenses__failsOnUnregisteredLicense(@TempDir Path directory) throws IOException {
         // ARRANGE //
@@ -376,6 +382,7 @@ class ThirdPartyLicensesPluginTest {
         );
     }
 
+    @Tag("testkit")
     @Test
     void generateThirdPartyLicenses__rendersAttributionIntoDistribution(@TempDir Path directory) throws IOException {
         // ARRANGE //

@@ -28,6 +28,7 @@ import org.gradle.api.Project;
 import org.gradle.testfixtures.ProjectBuilder;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.jspecify.annotations.Nullable;
@@ -58,7 +59,9 @@ import java.util.Properties;
  * The fixture builds run in daemons that the test JVM's coverage agent cannot reach. When the test
  * task sets {@code testKit.fixtureJvmArgs}, {@code writeFixture} passes it on through each
  * fixture's {@code gradle.properties}, which is how the build records their coverage. Without it,
- * as under an IDE's own test runner, the fixtures run the same and record nothing.
+ * as under an IDE's own test runner, the fixtures run the same and record nothing. Each method that
+ * starts a TestKit build is tagged {@code testkit}, and PITest skips it because the daemon never
+ * runs the mutant.
  */
 class VersionReferencesPluginTest {
     /**
@@ -210,6 +213,7 @@ class VersionReferencesPluginTest {
         return (RewriteVersionReferences) project.getTasks().getByName("rewriteVersionReferences");
     }
 
+    @Tag("testkit")
     @Test
     void rewriteVersionReferences__ignoresTheGitEnvironment(@TempDir Path directory)
             throws GitAPIException, IOException {
@@ -235,6 +239,7 @@ class VersionReferencesPluginTest {
         assertEquals("com.example.widgets:beta:1.1.0\n", Files.readString(decoy.resolve("decoy.txt")));
     }
 
+    @Tag("testkit")
     @Test
     void rewriteVersionReferences__leavesAnExcludedFileAlone(@TempDir Path directory)
             throws GitAPIException, IOException {
@@ -257,6 +262,7 @@ class VersionReferencesPluginTest {
         assertTrue(Files.readString(directory.resolve("README.md")).contains("com.example.widgets:beta:1.2.0"));
     }
 
+    @Tag("testkit")
     @Test
     void rewriteVersionReferences__leavesAVersionDeclaredInTheBuildScript(@TempDir Path directory)
             throws GitAPIException, IOException {
@@ -280,6 +286,7 @@ class VersionReferencesPluginTest {
         );
     }
 
+    @Tag("testkit")
     @Test
     void rewriteVersionReferences__movesASingleProject(@TempDir Path directory) throws GitAPIException, IOException {
         // ARRANGE //
@@ -311,6 +318,7 @@ class VersionReferencesPluginTest {
         assertTrue(Files.readString(directory.resolve("gradle.properties")).contains("version=1.2.0-SNAPSHOT"));
     }
 
+    @Tag("testkit")
     @Test
     void rewriteVersionReferences__movesTheFilesForARelease(@TempDir Path directory)
             throws GitAPIException, IOException {
@@ -342,6 +350,7 @@ class VersionReferencesPluginTest {
         assertTrue(result.getOutput().contains("RELEASE.md ("), result.getOutput());
     }
 
+    @Tag("testkit")
     @Test
     void rewriteVersionReferences__optionsOverrideTheReleaseProperties(@TempDir Path directory)
             throws GitAPIException, IOException {
@@ -369,6 +378,7 @@ class VersionReferencesPluginTest {
         assertFalse(releaseNotes.contains("9.10.0"), releaseNotes);
     }
 
+    @Tag("testkit")
     @Test
     void rewriteVersionReferences__readsTheReleasePropertiesWhenNoOptionIsGiven(@TempDir Path directory)
             throws GitAPIException, IOException {
@@ -392,6 +402,7 @@ class VersionReferencesPluginTest {
         );
     }
 
+    @Tag("testkit")
     @Test
     void rewriteVersionReferences__refusesWithoutAVersionPair(@TempDir Path directory)
             throws GitAPIException, IOException {
@@ -408,6 +419,7 @@ class VersionReferencesPluginTest {
         assertEquals(before, read(directory));
     }
 
+    @Tag("testkit")
     @Test
     void rewriteVersionReferences__reusesTheConfigurationCache(@TempDir Path directory)
             throws GitAPIException, IOException {
@@ -430,6 +442,7 @@ class VersionReferencesPluginTest {
         assertTrue(Files.readString(directory.resolve("README.md")).contains("com.example.widgets:beta:1.2.0"));
     }
 
+    @Tag("testkit")
     @Test
     void rewriteVersionReferences__succeedsWhenRunTwice(@TempDir Path directory) throws GitAPIException, IOException {
         // ARRANGE //
@@ -446,6 +459,7 @@ class VersionReferencesPluginTest {
         assertTrue(result.getOutput().contains("Nothing to rewrite"), result.getOutput());
     }
 
+    @Tag("testkit")
     @Test
     void rewriteVersionReferences__warnsAboutAnExcludeThatMatchesNothing(@TempDir Path directory)
             throws GitAPIException, IOException {
@@ -471,6 +485,7 @@ class VersionReferencesPluginTest {
         assertEquals("com.example.widgets:beta:1.2.0\n", Files.readString(directory.resolve("docs/guide.md")));
     }
 
+    @Tag("testkit")
     @Test
     void rewriteVersionReferences__writesNothingWhenALineIsNotRecognised(@TempDir Path directory)
             throws GitAPIException, IOException {

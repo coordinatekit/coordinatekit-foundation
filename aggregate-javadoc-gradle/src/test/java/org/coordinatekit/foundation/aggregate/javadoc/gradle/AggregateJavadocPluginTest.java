@@ -37,6 +37,7 @@ import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 import org.gradle.testkit.runner.TaskOutcome;
 import org.gradle.util.GradleVersion;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -82,7 +83,9 @@ import javax.tools.ToolProvider;
  * compile dependency, and that a project depending on a selected one still compiles against that
  * project's classes. It also shows that the classpath resolves in a parallel build, once with the
  * configuration cache off, where the task resolves it at execution while other projects' tasks run,
- * and once with the cache on, where Gradle resolves it as the cache entry is stored.
+ * and once with the cache on, where Gradle resolves it as the cache entry is stored. Each method
+ * that starts a TestKit build is tagged {@code testkit}, and PITest skips it because the daemon
+ * never runs the mutant.
  *
  * <p>
  * Both fixture builds apply the plugin through {@code plugins { id ... }} and
@@ -122,6 +125,7 @@ class AggregateJavadocPluginTest {
     private static final Pattern TAB = Pattern
             .compile("<button id=\"all-packages-table-tab(\\d+)\"[^>]*>([^<]*)</button>");
 
+    @Tag("testkit")
     @Test
     void apply__carriesMainSourceSetFeatureDependencies(@TempDir Path directory, @TempDir Path classes)
             throws IOException {
@@ -297,6 +301,7 @@ class AggregateJavadocPluginTest {
         assertEquals(List.of(List.of("org.example.a*")), List.copyOf(options.getGroups().values()));
     }
 
+    @Tag("testkit")
     @Test
     void apply__groupsPackagesByModule(@TempDir Path directory) throws IOException {
         // ARRANGE //
@@ -415,6 +420,7 @@ class AggregateJavadocPluginTest {
 
     @MethodSource
     @ParameterizedTest
+    @Tag("testkit")
     void apply__resolvesClasspathInParallelBuild(
             ParallelBuildParameters parameters,
             @TempDir Path directory,
