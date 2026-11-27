@@ -60,7 +60,7 @@ System.out.print(new Banner().render(ansiEnabled));
 
 `changelog-gradle` publishes a Gradle plugin, applied under the id `org.coordinatekit.foundation.changelog`, that generates `CHANGELOG.md` from conventional commits. It applies [git-changelog](https://github.com/tomasbjerre/git-changelog-gradle-plugin) and configures its `gitChangelog` task with CoordinateKit's template, which lists Breaking Changes, Deprecated, Features, Bug Fixes, Performance, Build, and Reverts for each release, linking every entry to its pull request or, for a commit that landed without one, to the commit. A squash-merged commit's trailing `(#NN)` becomes the pull request link, and a `DEPRECATED:` footer files a commit under Deprecated.
 
-git-changelog publishes to the Gradle Plugin Portal and this plugin to Maven Central, so `settings.gradle` has to name both among its plugin repositories before the `plugins` block can resolve either:
+git-changelog publishes to the Gradle Plugin Portal and this plugin to Maven Central, so `settings.gradle` has to name both among its plugin repositories:
 
 ```groovy
 pluginManagement {
@@ -112,7 +112,7 @@ Concordance is the member-order rule CoordinateKit's Java sources follow. A type
 | `org.coordinatekit.foundation:concordance-errorprone` | The check. It belongs on Error Prone's own classpath, which the plugin arranges.              |
 | `org.coordinatekit.foundation:concordance-gradle`     | The Gradle plugin, applied under the id `org.coordinatekit.foundation.concordance`.           |
 
-The plugin publishes to Maven Central rather than to the Gradle Plugin Portal, so `settings.gradle` has to name Central among its plugin repositories before the `plugins` block can resolve it:
+The plugin publishes to Maven Central rather than to the Gradle Plugin Portal, so `settings.gradle` has to name Central among its plugin repositories:
 
 ```groovy
 pluginManagement {
@@ -183,7 +183,7 @@ aggregateJavadoc {
 
 The block's `projects` property names the modules the task covers. It defaults to every subproject that applies `java`, so a build sets it only to narrow or widen that, as in `projects = subprojects.findAll { it.name != "docs" }`. The `title` property is the one required setting, and a build that leaves it out fails at the end of evaluation with a message naming it. `links` and `wordForms` are empty by default.
 
-`aggregateJavadoc` writes to `build/docs/aggregateJavadoc` and fails on any Javadoc warning. Each module gets a tab of its own, so its package has to be the module's own group plus its name with the dashes turned into dots: `cli-brand` in group `org.example` lives in `org.example.cli.brand`. Javadoc puts a package in the first group whose pattern matches it, so the plugin registers the longest module name first. Without that, the pattern for `concordance` would also claim the packages of `concordance-gradle`. A tab is titled by the module name's segments, each capitalised, and `wordForms` overrides the ones that should not be, such as `cli` for `CLI`.
+`aggregateJavadoc` writes to `build/docs/aggregateJavadoc` and fails on any Javadoc warning. Each module gets a tab of its own, so its package has to be the module's own group plus its name with the dashes turned into dots: `cli-brand` in group `org.example` lives in `org.example.cli.brand`. A tab is titled by the module name's segments, each capitalised, followed by `Module`, and `wordForms` overrides the segments that should not be capitalised, such as `cli` for `CLI`. The tabs are in alphabetical order of those titles without the `Module` suffix, ignoring case, so `Concordance Module` comes ahead of `Concordance Gradle Module`. Each module's package pattern ends in `*`, so the pattern for `concordance` also matches the packages of `concordance-gradle`. Javadoc gives a package to the longest pattern that matches it, whatever order the groups are registered in, so those packages still land on the `concordance-gradle` tab.
 
 The task's classpath carries what the selected modules compile against through their dependency configurations: everything their `compileClasspath` extends, including `implementation`, `compileOnly`, and the configurations of a feature variant on the main source set, the BOMs those name through `platform(...)`, and the modules they depend on, which are built but not documented. Files a build adds straight to a source set's compile classpath, as in `sourceSets.main.compileClasspath += files(...)`, belong to no configuration and are not carried. The root project resolves it through its own `aggregateJavadocClasspath` configuration, so the root has to reach every repository those dependencies come from. Repositories declared in `allprojects { }` or in `dependencyResolutionManagement` cover it, and a build that declares them only in `subprojects { }` fails to resolve the classpath. Each selected module offers its dependencies to the root under the `aggregate-javadoc-classpath` capability, which nothing else asks for, so an ordinary dependency on a selected module still gets that module's classes.
 
@@ -236,7 +236,7 @@ spotless {
 }
 ```
 
-Reading the entry as a string rather than resolving it as a file matters. `configFile` resolves its argument during configuration, which would make every invocation of the consumer's build, including `./gradlew tasks`, resolve the jar as a file dependency. `configXml` and `licenseHeader` take content directly, so a single `asString()` covers it.
+With Spotless 8.11.0, `help` and `compileJava` don't resolve the jar under this recipe, but `tasks` and `spotlessCheck` do.
 
 The example points `licenseHeaderFile` at the consumer's own file rather than at `license_header.txt` from the jar. The bundled header names CoordinateKit's copyright holder and Apache-2.0, so it suits this repository's own projects and nothing else. Take it only if that is genuinely your header.
 

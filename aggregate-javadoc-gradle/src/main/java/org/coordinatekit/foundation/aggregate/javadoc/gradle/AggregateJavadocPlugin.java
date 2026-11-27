@@ -56,12 +56,14 @@ import java.util.stream.Collectors;
  * toolchain only in {@code subprojects { }} will run the task with the daemon's JDK instead.
  *
  * <p>
- * Each selected project gets a tab of its own. A project's package is the project's own group plus
- * its name with the dashes turned into dots, so {@code cli-brand} in group {@code org.example} is
+ * Each selected project gets a tab of its own, and the tabs are in alphabetical order of the
+ * projects' display names, ignoring case. A project's package is the project's own group plus its
+ * name with the dashes turned into dots, so {@code cli-brand} in group {@code org.example} is
  * documented under {@code org.example.cli.brand}. A group set only in {@code subprojects { }} is
- * enough. Javadoc puts a package in the first group whose pattern matches it, so the groups are
- * registered longest module name first: without that, the pattern for {@code concordance} would
- * also claim the packages of {@code concordance-gradle}.
+ * enough. Each tab's package pattern ends in {@code *}, so the pattern for {@code concordance} also
+ * matches the packages of {@code concordance-gradle}. Javadoc gives a package to the longest
+ * pattern that matches it, so those packages still land on the {@code concordance-gradle} tab. The
+ * order the groups are registered in sets only the order of the tabs.
  *
  * <p>
  * The task's classpath carries what the selected projects compile against through their dependency
@@ -344,9 +346,12 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
     }
 
     /**
-     * Computes the Javadoc groups for a set of modules, longest module name first. Each pattern ends in
-     * {@code *}, and Javadoc puts a package in the first group that matches it, so a module whose name
-     * prefixes another's has to be registered after it.
+     * Computes the Javadoc groups for a set of modules, in the order their tabs appear. The order is
+     * alphabetical by each module's display name without the {@code Module} suffix, ignoring case, so
+     * {@code Concordance} comes ahead of {@code Concordance Gradle}. Modules whose display names match
+     * that way are ordered by name, then by group. Each pattern ends in {@code *}, so one can match
+     * another module's packages. Javadoc gives such a package to the longest pattern that matches it,
+     * whatever the registration order.
      *
      * @param modules the modules to document
      * @param wordForms the display form of each name segment that is not just the segment capitalised
@@ -356,8 +361,11 @@ public class AggregateJavadocPlugin implements Plugin<Project> {
         Map<String, String> groups = new LinkedHashMap<>();
         modules.stream()
                 .sorted(
-                        Comparator.<Module>comparingInt(module -> module.name().length())
-                                .reversed()
+                        Comparator
+                                .<Module, String>comparing(
+                                        module -> label(module.name(), wordForms),
+                                        String.CASE_INSENSITIVE_ORDER
+                                )
                                 .thenComparing(Module::name)
                                 .thenComparing(Module::group)
                 )
