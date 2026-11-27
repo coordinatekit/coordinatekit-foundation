@@ -28,8 +28,7 @@
  * <p>
  * git-changelog publishes to the Gradle Plugin Portal and not to Maven Central, so a consumer's
  * {@code settings.gradle} needs both {@code mavenCentral()} and {@code gradlePluginPortal()} in its
- * {@code pluginManagement} repositories before the {@code plugins} block can resolve this plugin.
- * README.md has the recipe.
+ * {@code pluginManagement} repositories. README.md has the recipe.
  */
 @NullMarked
 package org.coordinatekit.foundation.changelog.gradle;

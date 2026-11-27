@@ -27,8 +27,8 @@
  *
  * <p>
  * The plugin publishes to Maven Central rather than to the Gradle Plugin Portal, so a consumer's
- * {@code settings.gradle} needs {@code mavenCentral()} in its {@code pluginManagement} repositories
- * before the {@code plugins} block can resolve it. README.md has the recipe.
+ * {@code settings.gradle} needs {@code mavenCentral()} in its {@code pluginManagement}
+ * repositories. README.md has the recipe.
  */
 @NullMarked
 package org.coordinatekit.foundation.aggregate.javadoc.gradle;
