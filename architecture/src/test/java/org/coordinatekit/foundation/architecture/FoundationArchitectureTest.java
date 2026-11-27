@@ -482,7 +482,6 @@ class FoundationArchitectureTest {
     }
 
     @Test
-    @org.junit.jupiter.api.condition.DisabledIfSystemProperty(named = "java.version", matches = ".*")
     void commandVersionProvider__narrowsPicocliCommands() {
         // ARRANGE //
         FoundationArchitecture unconfigured = newBuilder().build();
