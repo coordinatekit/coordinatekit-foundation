@@ -66,7 +66,7 @@ public abstract class AggregateJavadocExtension {
     /**
      * The display forms of module name segments that are not just the segment capitalised, such as
      * {@code cli} for {@code CLI}. A module's tab is titled by its dash-separated name segments, each
-     * looked up here first. Empty by default.
+     * looked up here first, and the tabs are sorted by those titles, ignoring case. Empty by default.
      *
      * @return the display form of each segment that needs one, keyed by segment
      */

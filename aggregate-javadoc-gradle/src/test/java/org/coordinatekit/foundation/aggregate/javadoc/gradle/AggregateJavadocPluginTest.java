@@ -74,7 +74,8 @@ import javax.tools.ToolProvider;
  * <p>
  * What only a real build can show is covered by TestKit builds.
  * {@link #apply__groupsPackagesByModule} shows that the groups sort each module's packages onto its
- * own tab and that a module outside the selection is built but not documented.
+ * own tab, even though the shorter of two overlapping patterns is registered first, and that a
+ * module outside the selection is built but not documented.
  * {@link #apply__carriesMainSourceSetFeatureDependencies} shows that the classpath carries the
  * dependencies of a feature variant on the main source set.
  * {@link #apply__resolvesClasspathInParallelBuild} shows that the classpath carries every kind of
@@ -211,7 +212,7 @@ class AggregateJavadocPluginTest {
                 Files.readAllLines(optionFile).stream().map(String::strip).anyMatch("-Werror"::equals),
                 Files.readString(optionFile)
         );
-        assertEquals(List.of("A Bee Module", "A Module"), List.copyOf(options.getGroups().keySet()));
+        assertEquals(List.of("A Module", "A Bee Module"), List.copyOf(options.getGroups().keySet()));
         assertTrue(
                 task.getTaskDependencies()
                         .getDependencies(task)
@@ -315,6 +316,11 @@ class AggregateJavadocPluginTest {
         Path pages = directory.resolve("build/docs/aggregateJavadoc");
         assertFalse(Files.exists(pages.resolve("fixture/support")), "an unselected module should not be documented");
         String index = Files.readString(pages.resolve("index.html"));
+        assertEquals(
+                List.of("All Packages", "A Module", "A B Module"),
+                tabsOf(index),
+                "the shorter pattern has to be registered first, and the tabs follow registration order"
+        );
         assertEquals("A Module", tabOf(index, "fixture/a/package-summary.html"));
         assertEquals("A B Module", tabOf(index, "fixture/a/b/package-summary.html"));
         assertTrue(second.getOutput().contains("Reusing configuration cache"), second.getOutput());
@@ -494,28 +500,28 @@ class AggregateJavadocPluginTest {
     static Stream<GroupsParameters> groups__labels() {
         return Stream.of(
                 new GroupsParameters(
-                        "prefix after its extension",
-                        List.of(module("a"), module("a-b")),
-                        Map.of(),
-                        List.of("A B Module", "A Module")
-                ),
-                new GroupsParameters(
-                        "input order ignored",
+                        "prefix ahead of its extension",
                         List.of(module("a-b"), module("a")),
                         Map.of(),
-                        List.of("A B Module", "A Module")
+                        List.of("A Module", "A B Module")
+                ),
+                new GroupsParameters(
+                        "sorted by label, not name",
+                        List.of(module("model"), module("ner")),
+                        Map.of("ner", "Entity Recognition"),
+                        List.of("Entity Recognition Module", "Model Module")
+                ),
+                new GroupsParameters(
+                        "case ignored",
+                        List.of(module("cli-brand"), module("changelog")),
+                        Map.of("cli", "CLI"),
+                        List.of("Changelog Module", "CLI Brand Module")
                 ),
                 new GroupsParameters(
                         "word form replaces capitalisation",
                         List.of(module("cli-brand")),
                         Map.of("cli", "CLI"),
                         List.of("CLI Brand Module")
-                ),
-                new GroupsParameters(
-                        "equal lengths sorted by name",
-                        List.of(module("b"), module("a")),
-                        Map.of(),
-                        List.of("A Module", "B Module")
                 )
         );
     }
@@ -600,6 +606,16 @@ class AggregateJavadocPluginTest {
                 .matcher(index);
         assertTrue(row.find(), "expected a row for " + packagePage + " in:\n" + index);
         return labels.get(row.group(1));
+    }
+
+    /**
+     * Reads the tabs of a generated overview page.
+     *
+     * @param index the contents of {@code index.html}
+     * @return the tabs' labels, in the order the page shows them
+     */
+    private static List<String> tabsOf(String index) {
+        return TAB.matcher(index).results().map(tab -> tab.group(2)).toList();
     }
 
     /**
