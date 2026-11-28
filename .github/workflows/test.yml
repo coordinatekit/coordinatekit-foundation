@@ -48,12 +48,6 @@ jobs:
   mutation:
     runs-on: ubuntu-latest
 
-    # Job-level permissions replace the workflow's, so the two it needs from there are repeated.
-    permissions:
-      contents: read
-      pull-requests: write
-      checks: write # the report action creates a check run
-
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -102,40 +96,5 @@ jobs:
         env:
           CLASSES: ${{ steps.changed.outputs.classes }}
 
-      - name: Publish mutation report
-        if: hashFiles('**/build/reports/pitest/mutations.xml') != ''
-        uses: Bonajo/pitest-report-action@v1.3.2
-        with:
-          name: Pitest report
-          file: "**/build/reports/pitest/mutations.xml"
-          summary: false
-          max-annotations: 50
-
-      # The action's table exists only in its check run, which it attaches to the PR head commit.
-      - name: Build mutation comment
-        run: |
-          {
-            printf '## Mutation Testing\n\n'
-            if [ -z "$CLASSES" ]; then
-              echo 'No changed classes to mutate.'
-            elif [ "$HAS_REPORT" != true ]; then
-              echo 'The changed classes have nothing to mutate.'
-            else
-              gh api --method GET "repos/$REPOSITORY/commits/$HEAD_SHA/check-runs" \
-                -f check_name="$CHECK_NAME" \
-                --jq '.check_runs | max_by(.completed_at) | .output.summary'
-            fi
-          } > pitest-comment.md
-        env:
-          CHECK_NAME: Pitest report
-          CLASSES: ${{ steps.changed.outputs.classes }}
-          GH_TOKEN: ${{ github.token }}
-          HAS_REPORT: ${{ hashFiles('**/build/reports/pitest/mutations.xml') != '' }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          REPOSITORY: ${{ github.repository }}
-
       - name: Add mutation results to PR
-        uses: marocchino/sticky-pull-request-comment@v3.0.5
-        with:
-          header: pitest
-          path: pitest-comment.md
+        uses: coordinatekit/mutation-report@initial-implementation
