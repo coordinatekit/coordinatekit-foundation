@@ -328,17 +328,6 @@ configure(project(":version-references-gradle")) {
     tasks.named("pitest") {
         inputs.files(repositoryDocs).withPropertyName("repositoryDocs")
     }
-
-    // PITest runs the same tests in JVMs of its own, which take system properties only as flags.
-    // PIT splits that argument list at every comma, the ones in the module list included, except
-    // within braces, which it then removes.
-    pitest {
-        jvmArgs.addAll(repositoryProperties.collect { key, value -> "{-D${key}=${value}}" as String })
-    }
-
-    tasks.named("pitest") {
-        inputs.files(repositoryDocs).withPropertyName("repositoryDocs")
-    }
 }
 
 // An Error Prone check is written against javac's own AST and symbol tables, which the jdk.compiler
