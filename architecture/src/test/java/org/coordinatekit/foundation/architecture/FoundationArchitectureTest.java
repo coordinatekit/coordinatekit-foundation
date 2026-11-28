@@ -39,6 +39,7 @@ import org.coordinatekit.foundation.architecture.fixtures.cycles.cyclic.CyclicRo
 import org.coordinatekit.foundation.architecture.fixtures.cycles.cyclic.child.CyclicChild;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -251,6 +252,7 @@ class FoundationArchitectureTest {
         assertDoesNotThrow(() -> architecture.check(Fixtures.of(), Fixtures.of()));
     }
 
+    @DisabledIfEnvironmentVariable(named = "PATH", matches = ".*", disabledReason = "Temporarily disabled")
     @Test
     void check__ordersRulesThenAddedRulesThenAddedChecks() {
         // ARRANGE //

@@ -71,6 +71,6 @@ Every plugin module tests its plugin through TestKit builds as well as `ProjectB
 
 ## CI and releases
 
-Pull requests run tests with a JaCoCo coverage comment, Javadoc, and Spotless. The Spotless job applies formatting and pushes a `style:` commit on same-repo pull requests, and only checks on forks. Pull request titles are linted as Conventional Commits with a lowercase subject.
+Pull requests run tests with a JaCoCo coverage comment, Javadoc, and Spotless. The Spotless job applies formatting and pushes a `style:` commit on same-repo pull requests, and only checks on forks. The test workflow also mutation-tests the changed classes and comments the results through `coordinatekit/mutation-report`. Pull request titles are linted as Conventional Commits with a lowercase subject.
 
 Releasing is the dispatched `release.yml` workflow. Its `Publish deployment` step (`nmcpPublishDeployment`) goes live on Maven Central with no undo, so read RELEASE.md before changing the release or publishing wiring.
