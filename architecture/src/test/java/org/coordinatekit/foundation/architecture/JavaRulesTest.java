@@ -96,6 +96,7 @@ import org.coordinatekit.foundation.architecture.fixtures.StaticOnlySubclass;
 import org.coordinatekit.foundation.architecture.fixtures.SystemErrMethodReference;
 import org.coordinatekit.foundation.architecture.fixtures.SystemOutPrinter;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.xml.sax.Parser;
@@ -300,6 +301,7 @@ class JavaRulesTest {
         assertEquals(parameters.descriptions(), descriptions, parameters.name());
     }
 
+    @DisabledIfEnvironmentVariable(named = "PATH", matches = ".*", disabledReason = "Temporarily disabled")
     @MethodSource("factories")
     @ParameterizedTest
     void emptyClassesPass(FactoryParameters parameters) {

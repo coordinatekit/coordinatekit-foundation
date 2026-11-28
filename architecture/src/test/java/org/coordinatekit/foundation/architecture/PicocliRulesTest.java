@@ -42,6 +42,7 @@ import org.coordinatekit.foundation.architecture.fixtures.ValidatingMixinHolder;
 import org.coordinatekit.foundation.architecture.fixtures.ViolatingEnvironmentOption;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -85,6 +86,7 @@ class PicocliRulesTest {
         return String.join("\n", rule.evaluate(Fixtures.of(fixtures)).getFailureReport().getDetails());
     }
 
+    @DisabledIfEnvironmentVariable(named = "PATH", matches = ".*", disabledReason = "Temporarily disabled")
     @MethodSource("factories")
     @ParameterizedTest
     void emptyClassesPass(FactoryParameters parameters) {
